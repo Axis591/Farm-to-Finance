@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from pypdf import PdfReader
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -450,6 +451,241 @@ def districts(state: str = Query(..., min_length=2)):
         return {"districts":found,"source":"AGMARKNET state/district API","note":"Districts supplied by AGMARKNET. If a district is absent, you can type it manually."}
     return {"districts":[],"source":"unavailable","note":"AGMARKNET district lookup is unavailable for this state right now; type the district name manually."}
 
+
+# Source data from Ministry of Finance, Government of India, Lok Sabha Starred
+# Question 430, answered 23 March 2026. Annexure-II: FY 2022-23 to FY 2024-25
+# state/UT-wise agricultural-credit disbursement. Annexure-I: provisional
+# state/UT-by-bank-group outstanding as of 31 December 2025, in Rs crore.
+AGRI_CREDIT_SOURCE = "https://sansad.in/getFile/loksabhaquestions/annex/187/AS430_6PvNZy.pdf?source=pqals"
+AGRI_CREDIT_DISBURSEMENT = {
+    "A and N Island": [402, 437, 476], "Andhra Pradesh": [239188, 300497, 327037],
+    "Arunachal Pradesh": [637, 950, 1213], "Assam": [9062, 11564, 14514],
+    "Bihar": [52994, 70321, 66492], "Chandigarh": [1635, 1938, 2287],
+    "Chhattisgarh": [29266, 33838, 37154], "D & N Haveli and Daman & Diu": [342, 393, 383],
+    "Delhi": [19350, 24157, 29317], "Goa": [1905, 2429, 14492],
+    "Gujarat": [120529, 141161, 163965], "Haryana": [81805, 89396, 99222],
+    "Himachal Pradesh": [11003, 11628, 14426], "Jammu and Kashmir": [13152, 12624, 17841],
+    "Jharkhand": [12171, 22109, 16553], "Karnataka": [172470, 207615, 231295],
+    "Kerala": [140236, 160468, 177510], "Ladakh": [334, 352, 420],
+    "Lakshadweep": [23, 62, 40], "Madhya Pradesh": [100076, 116397, 133121],
+    "Maharashtra": [150532, 168547, 201867], "Manipur": [645, 649, 842],
+    "Meghalaya": [404, 478, 554], "Mizoram": [309, 427, 1715],
+    "Nagaland": [340, 412, 553], "Odisha": [47749, 60365, 80673],
+    "Puducherry": [5574, 7066, 8183], "Punjab": [90798, 95687, 100544],
+    "Rajasthan": [141612, 153593, 168545], "Sikkim": [340, 405, 3016],
+    "Tamil Nadu": [375747, 452384, 483678], "Telangana": [109798, 139703, 164908],
+    "Tripura": [1670, 2175, 2971], "Uttar Pradesh": [151452, 171390, 196225],
+    "Uttarakhand": [11244, 12674, 15779], "West Bengal": [60369, 74343, 89070],
+}
+# Each tuple is scheduled commercial banks, regional rural banks, rural cooperative
+# banks. None is an em-dash in the official table (not reported), not a zero.
+AGRI_CREDIT_OUTSTANDING = {
+    "A and N Island": (438, None, 21), "Andhra Pradesh": (285380, 55013, 34861),
+    "Arunachal Pradesh": (518, None, None), "Assam": (16744, 5172, 226),
+    "Bihar": (58468, 24425, 7427), "Chandigarh": (2808, None, 0),
+    "Chhattisgarh": (24511, 3598, 5934), "D & N Haveli and Daman & Diu": (259, None, 19),
+    "Delhi": (29472, None, 0), "Goa": (1641, None, 224), "Gujarat": (110877, 13345, 44239),
+    "Haryana": (71483, 11967, 15054), "Himachal Pradesh": (9415, 1929, 3404),
+    "Jammu and Kashmir": (13330, 1472, 22), "Jharkhand": (17618, 2949, 60),
+    "Karnataka": (180145, None, 30100), "Kerala": (127460, 21795, 11768),
+    "Ladakh": (467, 12, 15), "Lakshadweep": (53, None, None),
+    "Madhya Pradesh": (129428, 12141, 29189), "Maharashtra": (249900, 10488, 46906),
+    "Manipur": (981, 130, 181), "Meghalaya": (643, 463, 185),
+    "Mizoram": (229, 898, 511), "Nagaland": (609, 18, 235),
+    "Odisha": (49027, 8338, 22332), "Puducherry": (6623, 1648, 6),
+    "Punjab": (83057, 8790, 8475), "Rajasthan": (144192, 30069, 18032),
+    "Sikkim": (360, None, 41), "Tamil Nadu": (456718, 26997, 22576),
+    "Telangana": (131703, 26541, 17717), "Tripura": (1825, 1079, 1858),
+    "Uttar Pradesh": (169112, 60985, None), "Uttarakhand": (13045, 771, 2611),
+    "West Bengal": (73365, 10851, 6791),
+}
+
+def _credit_state_key(state):
+    aliases = {
+        "aandamanandnicobarislands": "A and N Island",
+        "andamanandnicobarislands": "A and N Island",
+        "dadraandnagarhavelianddamananddiu": "D & N Haveli and Daman & Diu",
+        "dadraandnagarhaveli": "D & N Haveli and Daman & Diu",
+        "damananddiu": "D & N Haveli and Daman & Diu",
+        "puducherry": "Puducherry",
+        "jammuandkashmir": "Jammu and Kashmir",
+    }
+    normalized = _norm(state)
+    if normalized in aliases:
+        return aliases[normalized]
+    return next((name for name in AGRI_CREDIT_DISBURSEMENT if _norm(name) == normalized), None)
+
+def official_agriculture_credit(state: str, district: str, fy: str):
+    key = _credit_state_key(state)
+    if key is None:
+        return result("Agriculture credit disbursement/outstanding (Government of India / NABARD)", "unavailable",
+                      note="The selected state/UT does not match the official credit table. No amount has been inferred.", url=AGRI_CREDIT_SOURCE)
+    years = ["2022-23", "2023-24", "2024-25"]
+    values = AGRI_CREDIT_DISBURSEMENT[key]
+    history = [{"financial_year": y, "amount_crore": v} for y, v in zip(years, values)]
+    top = sorted([{"state": name, "amount_crore": vals[-1]} for name, vals in AGRI_CREDIT_DISBURSEMENT.items()],
+                 key=lambda x: x["amount_crore"], reverse=True)[:10]
+    outstanding = AGRI_CREDIT_OUTSTANDING.get(key, (None, None, None))
+    groups = [
+        {"bank_group": "Scheduled commercial banks", "amount_crore": outstanding[0]},
+        {"bank_group": "Regional rural banks", "amount_crore": outstanding[1]},
+        {"bank_group": "Rural cooperative banks", "amount_crore": outstanding[2]},
+    ]
+    reported = [x["amount_crore"] for x in groups if x["amount_crore"] is not None]
+    data = {
+        "state": state, "selected_district": district,
+        "data_level": "State/UT aggregate; not district-specific",
+        "disbursement_history": history, "top_states_disbursement": top,
+        "outstanding_by_bank_group": [x for x in groups if x["amount_crore"] is not None],
+        "outstanding_reported_sum_crore": sum(reported) if reported else None,
+        "outstanding_total_is_complete": len(reported) == 3,
+        "outstanding_as_of": "2025-12-31",
+        "unit": "INR crore",
+        "district_level_credit": None,
+    }
+    return result("Agriculture credit disbursement/outstanding (Government of India / NABARD)", "available",
+                  data, updated="2026-03-23",
+                  note="Official Ministry of Finance answer to Lok Sabha Starred Question 430, 23 March 2026; Annexure-II gives state/UT-wise disbursement for FY 2022-23 to 2024-25. Annexure-I reports provisional outstanding balances by bank group as of 31 December 2025, in ₹ crore. Source: banks' ENSURE submissions to NABARD. Not district-level. Em dashes mean not reported, not zero. Disbursement minus outstanding is not loan recovery.",
+                  url=AGRI_CREDIT_SOURCE)
+
+AGRI_INCOME_PDF = "https://issrf.in/wp-content/uploads/2025/04/District-Level-Estimates-of-Agriculture-Household-Income.pdf"
+AGRI_INCOME_SOURCE = "https://issrf.in/2025/04/15/district-level-estimates-of-agriculture-household-income-2019-in-india/"
+INCOME_STATE_NAMES = [
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
+    "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh",
+    "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab",
+    "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand",
+    "West Bengal", "Jammu and Kashmir", "Ladakh", "Delhi", "Andaman and Nicobar Islands",
+    "Chandigarh", "Dadra and Nagar Haveli", "Daman and Diu", "Lakshadweep", "Puducherry"
+]
+INCOME_STATE_ALIASES = {
+    "jammuandkashmir": "Jammu and Kashmir",
+    "andamanandnicobarislands": "Andaman and Nicobar Islands",
+    "dadraandnagarhavelianddamananddiu": "Dadra and Nagar Haveli",
+    "uttarakhand": "Uttarakhand", "odisha": "Odisha",
+}
+INCOME_DISTRICT_ALIASES = {
+    "paschimmedinipur": ["Paschim Medinipur", "Pashchim Medinipur", "West Midnapore", "Midnapore West"],
+    "pashchimmedinipur": ["Paschim Medinipur", "Pashchim Medinipur", "West Midnapore", "Midnapore West"],
+    "purba medinipur": ["Purba Medinipur", "East Midnapore", "Midnapore East"],
+    "gurugram": ["Gurugram", "Gurgaon"],
+    "ahmadabad": ["Ahmedabad", "Ahmadabad"],
+    "allahabad": ["Allahabad", "Prayagraj"],
+    "prayagraj": ["Allahabad", "Prayagraj"],
+    "nellore": ["Nellore", "Sri Potti Sriramulu Nellore"],
+    "ysr": ["YSR", "Y.S.R.", "Cuddapah", "Kadapa"],
+}
+
+def _extract_income_rows_from_pdf():
+    """Read district income appendix; records remain tagged as model estimates, not profit."""
+    try:
+        response = HTTP.get(AGRI_INCOME_PDF, timeout=75)
+        response.raise_for_status()
+        reader = PdfReader(BytesIO(response.content))
+    except Exception:
+        logging.exception("Could not download/read ISSRF income PDF")
+        return []
+    num = r"([\d,]+\.\d{2})"
+    row_re = re.compile(r"(?<!\d)(\d{1,3})\s+([A-Za-z][A-Za-z&().,/'\- ]{0,75}?)\s+" +
+                        r"\s+".join([num] * 7))
+    rows = []
+    current_state = None
+    table_started = False
+    states_long = sorted(INCOME_STATE_NAMES, key=len, reverse=True)
+    for page in reader.pages:
+        page_text = page.extract_text() or ""
+        if "Average Monthly Income of Agriculture Households" in page_text or "District Wise Survey" in page_text:
+            table_started = True
+        # Every appendix state page has its state name in the header, but some tables
+        # wrap across a page; retain last state on continuation page.
+        head = " ".join(page_text.splitlines()[:20])
+        for state_name in states_long:
+            if re.search(r"(?i)(?<![A-Za-z])" + re.escape(state_name) + r"(?![A-Za-z])", head):
+                if "Annexure-1" not in head or "Average Monthly Income" in page_text:
+                    current_state = state_name
+                    break
+        if not table_started or not current_state:
+            continue
+        flat = re.sub(r"\s+", " ", page_text)
+        for match in row_re.finditer(flat):
+            district_name = re.sub(r"\s+", " ", match.group(2)).strip(" .-")
+            if not district_name:
+                continue
+            nums = []
+            for raw in match.groups()[2:]:
+                try: nums.append(float(raw.replace(",", "")))
+                except ValueError: nums.append(None)
+            if len(nums) != 7:
+                continue
+            rows.append({
+                "state": current_state, "district": district_name,
+                "survey_income_rs": nums[0], "linear_mixed_income_rs": nums[1],
+                "spatial_income_rs": nums[2], "survey_rse": nums[3],
+                "linear_mixed_rse": nums[4], "spatial_rse": nums[5],
+                "monthly_income_rs": nums[6],
+                "reference_period": "July 2018–June 2019",
+            })
+        # Allow next-page continuation only while page header remains same state.
+        # The first line of the table often breaks district names, so no strict line parsing.
+    dedup, seen = [], set()
+    for row in rows:
+        key = (_norm(row["state"]), _norm(row["district"]))
+        if key not in seen:
+            seen.add(key); dedup.append(row)
+    logging.info("Parsed %s district income rows from ISSRF PDF", len(dedup))
+    return dedup
+
+def _income_rows():
+    return cached("issrf_agri_household_income_2019", _extract_income_rows_from_pdf)
+
+def agricultural_household_income(state: str, district: str, fy: str):
+    try:
+        rows = _income_rows()
+        state_target = INCOME_STATE_ALIASES.get(_norm(state), state)
+        state_rows = [r for r in rows if _norm(r["state"]) == _norm(state_target)]
+        aliases = INCOME_DISTRICT_ALIASES.get(district.strip().casefold(), [district])
+        target_names = {_norm(name) for name in aliases + [district]}
+        selected = next((r for r in state_rows if _norm(r["district"]) in target_names), None)
+        if not selected:
+            candidate = [r for r in state_rows if _norm(r["district"]).startswith(_norm(district)) or _norm(district).startswith(_norm(r["district"]))]
+            if len(candidate) == 1 and len(_norm(district)) >= 5:
+                selected = candidate[0]
+        top = sorted(state_rows, key=lambda r: r["monthly_income_rs"], reverse=True)[:10]
+        if not rows:
+            return result("ISSRF district-level agricultural household income estimates (2018-19)", "unavailable",
+                          note="The ISSRF district income report could not be parsed by the service; no income or profit has been invented.", url=AGRI_INCOME_SOURCE)
+        if not selected:
+            return result("ISSRF district-level agricultural household income estimates (2018-19)", "no_matching_records",
+                          {"state":state,"district":district,"top_districts":[{"district":r["district"],"monthly_income_rs":r["monthly_income_rs"]} for r in top]},
+                          note="This report has no confidently matched model estimate for this district. Estimates are for July 2018–June 2019 and are not current farm profit.", url=AGRI_INCOME_SOURCE)
+        data = {
+            "state": state, "district": selected["district"],
+            "monthly_income_rs": selected["monthly_income_rs"],
+            "annualised_income_rs": round(selected["monthly_income_rs"] * 12, 2),
+            "estimate_type": "Benchmark/final model-based agricultural household income",
+            "reference_period": "July 2018–June 2019",
+            "model_relative_standard_error_percent": selected["linear_mixed_rse"],
+            "selected_estimate": {"district":selected["district"],"monthly_income_rs":selected["monthly_income_rs"],
+                                   "annualised_income_rs":round(selected["monthly_income_rs"]*12,2),
+                                   "reference_period":"July 2018–June 2019"},
+            "top_districts": [{"district":r["district"],"monthly_income_rs":r["monthly_income_rs"]} for r in top],
+            "state_district_estimate_count": len(state_rows),
+        }
+        return result("ISSRF district-level agricultural household income estimates (2018-19)", "available",
+                      data, updated="2025-04-15",
+                      note="The benchmark estimates use NSSO Situation Assessment Survey 2019 data for July 2018–June 2019 combined with small-area linear mixed/spatial models and auxiliary data. The estimate combines cultivation, livestock, wages and non-farm business, so it is not farm-business revenue, crop profit or net income. Some fully urban districts are explicitly unavailable.",
+                      url=AGRI_INCOME_SOURCE)
+    except Exception as e:
+        logging.exception("Income report parse failed")
+        return result("ISSRF district-level agricultural household income estimates (2018-19)", "error",
+                      note=f"Could not parse the public income report ({type(e).__name__}).", url=AGRI_INCOME_SOURCE)
+
+def official_loan_recovery_gap(state: str, district: str, fy: str):
+    return result("Agricultural loan recovery / repayment", "not_available",
+                  {"state":state,"district":district,"financial_year":fy,"recovered_amount_crore":None,"recovery_rate_percent":None},
+                  note="The linked Lok Sabha/NABARD table reports credit disbursement flows and outstanding loan balances, not repayments collected. Recovery cannot be calculated by subtracting one from the other. A separate district-wise recovery dataset is required.",
+                  url=AGRI_CREDIT_SOURCE)
+
 def official_finance_reference(state: str, district: str, fy: str):
     return result("PM-KISAN official scheme reference", "reference_available",
         {"programme":"Pradhan Mantri Kisan Samman Nidhi (PM-KISAN)",
@@ -481,6 +717,9 @@ def dashboard(state: str, district: str, fy: str):
             logging.exception("Climate fetch failed")
             sources["climate"]=result("Open-Meteo historical weather","error",note=f"Provider request failed: {type(e).__name__}.")
         sources["agriculture"]=ceda_agri_market(state,district,fy)
+        sources["agri_credit"]=official_agriculture_credit(state,district,fy)
+        sources["farm_income"]=agricultural_household_income(state,district,fy)
+        sources["loan_recovery"]=official_loan_recovery_gap(state,district,fy)
         finance = ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
         sources["finance"] = finance if finance.get("status") == "available" else official_finance_reference(state,district,fy)
         insurance = ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
@@ -533,7 +772,7 @@ def dashboard(state: str, district: str, fy: str):
                 url="https://api.imd.gov.in/public/api_reference.html")
 
         return {"selection":{"state":state,"district":district,"fy":fy},"generated_at":date.today().isoformat(),"sources":sources,
-          "disclaimer":"Agriculture uses CEDA Agri Market Data (AGMARKNET) for the selected financial-year window; Wheat is the default commodity and the data are mandi prices, not crop-production totals. If a district cannot be mapped, the card explicitly labels any state-level fallback. Finance and crop insurance show official scheme references when verified district/FY datasets are not configured; they do not invent district payment, premium or claim amounts. Climate data is a location-based gridded estimate, not a certified district statistic."}
+          "disclaimer":"Credit disbursement is state/UT-level from a Ministry of Finance Lok Sabha answer dated 23 March 2026, not district-specific. Outstanding loans are provisional as of 31 December 2025. Agricultural-household income is a model-based estimate for July 2018–June 2019, not farm profit or current revenue. Loan repayments and farm-business profit are not inferred where verified data are unavailable. CEDA/AGMARKNET reports mandi prices, not crop production. Climate uses gridded weather estimates."}
     return cached(key,load)
 
 @app.get("/api/config")

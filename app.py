@@ -890,8 +890,8 @@ def official_insurance_reference(state: str, district: str, fy: str):
 def dashboard_source(name: str, state: str, district: str, fy: str):
     """Return one independent dashboard source so the browser can render panels as they finish."""
     def insurance_source():
-        item=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
-        return item if item.get("status") == "available" else official_insurance_reference(state,district,fy)
+        # Use only the explicitly verified PMFBY reference, never a free-text filtered OGD dataset.
+        return official_insurance_reference(state,district,fy)
     jobs = {
         "climate": lambda: open_meteo_climate(state,district,fy),
         "agriculture": lambda: ceda_agri_market(state,district,fy),
@@ -925,8 +925,8 @@ def dashboard(state: str, district: str, fy: str):
                 return name, result(source_name, "error", note=f"Source request failed: {type(e).__name__}. Other dashboard sections remain available.")
 
         def insurance_source():
-            item=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
-            return item if item.get("status") == "available" else official_insurance_reference(state,district,fy)
+            # Use only the explicitly verified PMFBY reference, never a free-text filtered OGD dataset.
+            return official_insurance_reference(state,district,fy)
 
         jobs = [
             ("climate", lambda: open_meteo_climate(state,district,fy), "Open-Meteo historical weather"),
@@ -957,5 +957,4 @@ def config():
             "official_agriculture_credit_available":True,
             "pm_kisan_scheme_reference_available":True,
             "pmfby_kharif_snapshot_available":True,
-            "optional_agricultural_insurance_api_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip() and os.getenv("OGD_INSURANCE_RESOURCE_ID","").strip()),
             "message":"Dashboard panels are limited to agriculture, farm-weather risk context, agricultural household benchmarks, agricultural credit, farmer support, and crop insurance. Scheme references are not presented as district payment records; state and national values are labeled by geographic scope."}

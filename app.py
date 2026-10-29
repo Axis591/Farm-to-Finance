@@ -873,6 +873,35 @@ def official_insurance_reference(state: str, district: str, fy: str):
         note="Official crop-insurance scheme reference only, not a district-level claims or premiums API. District statistics require an API-enabled dataset.",
         url="https://pmfby.gov.in/")
 
+@app.get("/api/source/{name}")
+def dashboard_source(name: str, state: str, district: str, fy: str):
+    """Return one independent dashboard source so the browser can render panels as they finish."""
+    def finance_source():
+        item=ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
+        return item if item.get("status") == "available" else official_finance_reference(state,district,fy)
+    def insurance_source():
+        item=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
+        return item if item.get("status") == "available" else official_insurance_reference(state,district,fy)
+    jobs = {
+        "climate": lambda: open_meteo_climate(state,district,fy),
+        "agriculture": lambda: ceda_agri_market(state,district,fy),
+        "agri_credit": lambda: official_agriculture_credit(state,district,fy),
+        "farm_income": lambda: agricultural_household_income(state,district,fy),
+        "loan_recovery": lambda: official_loan_recovery_gap(state,district,fy),
+        "pmfby_national": lambda: official_pmfby_national_summary(),
+        "finance": finance_source,
+        "insurance": insurance_source,
+        "imd_current": lambda: imd_public_warnings(state,district),
+    }
+    if name not in jobs:
+        return result("Unknown dashboard source", "error", note="No source with that name is configured.")
+    try:
+        return cached(f"source:{name}:{state}:{district}:{fy}", jobs[name])
+    except Exception as e:
+        logging.exception("Dashboard source %s failed", name)
+        return result(name, "error", note=f"Source request failed: {type(e).__name__}. Other dashboard panels remain available.")
+
+
 @app.get("/api/dashboard")
 def dashboard(state: str, district: str, fy: str):
     key=f"dash:{state}:{district}:{fy}"

@@ -95,7 +95,7 @@ metric("Agri-household income estimate",estimate!==undefined&&estimate!==null?pr
 metric("Historical precipitation",cl.precipitation_total_mm==null?"Unavailable":fmt(cl.precipitation_total_mm," mm"),cl.period_start&&cl.period_end?cl.period_start+" to "+cl.period_end:"Climate source not available")
 ].join("");
 $("climate").innerHTML=sourceBlock(s.climate);
-$("imd").innerHTML=sourceBlock(s.imd_current)+'<p class="hint">Official IMD live district-warning map: <a target="_blank" rel="noopener" href="https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php">open district warning map ↗</a>. If the embedded map is blocked by the provider, use the link to open it separately.</p><iframe class="imd-embed" title="Official IMD district-wise warning map" loading="lazy" src="https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"></iframe>';
+$("imd").innerHTML=sourceBlock(s.imd_current)+'<p class="hint">Official IMD live district-warning map: <a target="_blank" rel="noopener" href="https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php">open district warning map ↗</a>. Use the official map link to view the live colour-coded district forecast.</p>';
 $("agri").innerHTML=sourceBlock(s.agriculture);
 $("finance").innerHTML=sourceBlock(s.finance)+sourceBlock(s.insurance)+sourceBlock(s.pmfby_national);
 $("sources").innerHTML=Object.values(s).map(sourceBlock).join("");

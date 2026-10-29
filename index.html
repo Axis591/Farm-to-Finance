@@ -45,18 +45,18 @@ label{font-size:12px;font-weight:700;color:#43554d;display:block;margin-bottom:7
 <div><label for="fy">FINANCIAL YEAR (FY 2014–15 ONWARD)</label><select id="fy"></select></div>
 <div><button id="refresh">Refresh data</button></div>
 </section>
-<div id="status" role="status">Loading dashboard…</div>
+<div id="status" role="status">Loading dashboard sources in parallel. Some external sources may take up to a short wait to respond.</div>
 <section class="card map-card" id="section-map" style="margin-top:14px"><h2>Selected district on map</h2><p class="hint">The marker follows your selected state and district. It is a location marker, not an official district-boundary polygon.</p><div id="districtMap" class="district-map" role="img" aria-label="Map showing the selected district"></div><p id="mapMeta" class="map-meta">Loading district map… · © OpenStreetMap contributors</p></section><section class="grid" id="metrics"></section>
 <section class="sections">
-<div class="card" id="section-climate"><h2>Climate & hazard context</h2><div id="climate"></div></div>
-<div class="card" id="section-imd"><h2>Current IMD warnings</h2><div id="imd"></div></div>
-<div class="card" id="section-agri"><h2>Agricultural market prices (AGMARKNET)</h2><div id="agri"></div></div>
-<div class="card" id="section-finance"><h2>Public finance & crop-insurance references</h2><div id="finance"></div><div id="insurance"></div></div>
-<div class="card wide" id="section-sources"><h2>Data sources & integration status</h2><div id="sources"></div></div>
-<div class="card wide" id="section-analytics"><h2>Research charts and key indicators</h2><div id="analytics" class="charts-grid"></div></div>
-<div class="card" id="section-credit"><h2>Reported agricultural credit and outstanding loans</h2><div id="credit"></div></div>
-<div class="card" id="section-income"><h2>Estimated agricultural household income</h2><div id="income"></div></div>
-<div class="card wide" id="section-pipeline"><h2>Farm-to-finance pipeline</h2><p class="hint">Opportunity estimates only appear when supported by configured data and an explicitly documented calculation. This starter does not fabricate project savings, funding gaps or eligibility.</p><div id="pipeline"></div></div>
+<div class="card" id="section-climate"><h2>Climate & hazard context</h2><div id="climate"><p class="hint">Loading historical rainfall and temperature indicators…</p></div></div>
+<div class="card" id="section-imd"><h2>Current IMD warnings</h2><div id="imd"><p class="hint">Loading current district warning feed…</p><div class="visual-cards"><div class="visual-stat"><div class="ico">🌦️</div><div class="label">Weather warnings</div><div class="value">Checking feed</div></div></div></div></div>
+<div class="card" id="section-agri"><h2>Agricultural market prices (AGMARKNET)</h2><div id="agri"><p class="hint">Checking available mandi-price observations…</p></div></div>
+<div class="card" id="section-finance"><h2>Public finance & crop-insurance references</h2><div id="finance"><p class="hint">Loading public finance references…</p></div><div id="insurance"><p class="hint">Loading crop-insurance information…</p></div></div>
+<div class="card wide" id="section-sources"><h2>Data sources & integration status</h2><div id="sources"><p class="hint">Checking source availability. Each source will report its status and limitations.</p></div></div>
+<div class="card wide" id="section-analytics"><h2>Research charts and key indicators</h2><div id="analytics" class="charts-grid"><div class="plot"><h3>Research charts</h3><div class="empty">Preparing charts from available source data…</div></div></div></div>
+<div class="card" id="section-credit"><h2>Reported agricultural credit and outstanding loans</h2><div id="credit"><p class="hint">Loading official agricultural credit tables…</p></div></div>
+<div class="card" id="section-income"><h2>Estimated agricultural household income</h2><div id="income"><p class="hint">Loading household-income estimates…</p></div></div>
+<div class="card wide" id="section-pipeline"><h2>Farm-to-finance pipeline</h2><p class="hint">Opportunity estimates only appear when supported by configured data and an explicitly documented calculation. This starter does not fabricate project savings, funding gaps or eligibility.</p><div id="pipeline"><p class="hint">Loading selected district and reporting-period context…</p></div></div>
 </section>
 <div class="foot" id="disclaimer"></div>
 </main>

@@ -433,7 +433,8 @@ def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: st
 
 @app.get("/")
 def home():
-    return FileResponse("static/index.html")
+    # Always serve the current built dashboard HTML; avoid stale browser/proxy copies after deploy.
+    return FileResponse("static/index.html", headers={"Cache-Control":"no-store, no-cache, must-revalidate", "Pragma":"no-cache"})
 
 @app.get("/api/health")
 def health():

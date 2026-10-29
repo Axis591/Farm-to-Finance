@@ -1,6 +1,8 @@
 import os, time, logging, re
 from datetime import date, datetime, timedelta
 from typing import Optional
+from io import BytesIO
+import xml.etree.ElementTree as ET
 import requests
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
@@ -643,8 +645,13 @@ def agricultural_household_income(state: str, district: str, fy: str):
         rows = _income_rows()
         state_target = INCOME_STATE_ALIASES.get(_norm(state), state)
         state_rows = [r for r in rows if _norm(r["state"]) == _norm(state_target)]
-        aliases = INCOME_DISTRICT_ALIASES.get(district.strip().casefold(), [district])
-        target_names = {_norm(name) for name in aliases + [district]}
+        aliases = [district]
+        district_key = _norm(district)
+        for alias_key, alias_values in INCOME_DISTRICT_ALIASES.items():
+            all_names = [alias_key] + alias_values
+            if any(_norm(name) == district_key for name in all_names):
+                aliases.extend(all_names)
+        target_names = {_norm(name) for name in aliases}
         selected = next((r for r in state_rows if _norm(r["district"]) in target_names), None)
         if not selected:
             candidate = [r for r in state_rows if _norm(r["district"]).startswith(_norm(district)) or _norm(district).startswith(_norm(r["district"]))]

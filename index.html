@@ -30,7 +30,7 @@ label{font-size:12px;font-weight:700;color:#43554d;display:block;margin-bottom:7
 <section class="sections">
 <div class="card"><h2>Climate & hazard context</h2><div id="climate"></div></div>
 <div class="card"><h2>Current IMD warnings</h2><div id="imd"></div></div>
-<div class="card"><h2>Agriculture & crop statistics</h2><div id="agri"></div></div>
+<div class="card"><h2>Agricultural market prices (AGMARKNET)</h2><div id="agri"></div></div>
 <div class="card"><h2>Finance & risk transfer</h2><div id="finance"></div><div id="insurance"></div></div>
 <div class="card wide"><h2>Data sources & integration status</h2><div id="sources"></div></div>
 <div class="card wide"><h2>Farm-to-finance pipeline</h2><p class="hint">Opportunity estimates only appear when supported by configured data and an explicitly documented calculation. This starter does not fabricate project savings, funding gaps or eligibility.</p><div id="pipeline"></div></div>
@@ -56,7 +56,7 @@ $("metrics").innerHTML=[
 metric("Historical precipitation",c.precipitation_total_mm==null?"Unavailable":fmt(c.precipitation_total_mm," mm"),c.period_start&&c.period_end?`${c.period_start} to ${c.period_end}`:"Climate source not available"),
 metric("Mean daily maximum temperature",c.max_temperature_mean_c==null?"Unavailable":fmt(c.max_temperature_mean_c," °C"),"Average of daily maximums in selected FY"),
 metric("Mean daily minimum temperature",c.min_temperature_mean_c==null?"Unavailable":fmt(c.min_temperature_mean_c," °C"),"Average of daily minimums in selected FY"),
-metric("Configured official data feeds",[s.agriculture,s.finance,s.insurance].filter(x=>x&&x.status==="available").length+" / 3","OGD resource IDs and API key required")
+metric("Available data feeds",[s.agriculture,s.finance,s.insurance].filter(x=>x&&x.status==="available").length+" / 3","Agriculture uses CEDA AGMARKNET; finance and insurance use OGD")
 ].join("");
 $("climate").innerHTML=sourceBlock(s.climate);$("imd").innerHTML=sourceBlock(s.imd_current);$("agri").innerHTML=sourceBlock(s.agriculture);
 $("finance").innerHTML=sourceBlock(s.finance);$("insurance").innerHTML=sourceBlock(s.insurance);

@@ -1,5 +1,5 @@
 import os, time, logging, re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 import requests
 from fastapi import FastAPI, Query
@@ -275,7 +275,7 @@ def ceda_agri_market(state: str, district: str, fy: str):
             if date_value:
                 try: parsed_date = date.fromisoformat(str(date_value)[:10])
                 except ValueError:
-                    try: parsed_date = date.strptime(str(date_value), "%d/%m/%Y")
+                    try: parsed_date = datetime.strptime(str(date_value), "%d/%m/%Y").date()
                     except Exception: parsed_date = None
             if parsed_date and not (date.fromisoformat(start) <= parsed_date <= date.fromisoformat(end)): continue
             item = {"commodity":_field(row, "cmdty", "commodity", "commodity_name", "commodityName") or "Wheat",

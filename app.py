@@ -725,31 +725,38 @@ def agricultural_household_income(state: str, district: str, fy: str):
 
 
 def official_pmfby_national_summary():
-    """Official PMFBY administrative-dashboard snapshot. India-wide Kharif trend; not district-specific."""
-    # Source dashboard last-updated 28 September 2026. The 2026 Kharif claim series
-    # is incomplete and intentionally omitted. Premium/claim values are converted from lakh to crore.
-    years = ["2018","2019","2020","2021","2022","2023","2024","2025"]
-    farmers = [23256797,21578164,18906275,16845752,20058814,25268201,29629227,22976591]
-    gross_premium_lakh = [2117238,2387258,2068650,1892150,2005257,2034766,2077966,1415036]
-    claims_paid_lakh = [1987878,2208868,1446423,1502087,1324476,1641203,1134726,987259]
-    sum_insured_lakh = [13990538,14538353,11625528,10208166,12706726,16781176,18199735,14505586]
+    """Published all-India Kharif snapshot from the official PMFBY administrative dashboard."""
+    # Source page last updated 28 September 2026, 09:09 AM. 2026 is an in-progress
+    # season: its displayed zero in the claim row is not treated as a final outcome.
+    years = ["2018","2019","2020","2021","2022","2023","2024","2025","2026"]
+    farmers = [23256797,21578164,18906275,16845752,20058814,25268201,29629227,22976591,27298609]
+    gross_premium_lakh = [2117238,2387258,2068650,1892150,2005257,2034766,2077966,1415036,1236114]
+    claims_paid_lakh = [1987878,2208868,1446423,1502087,1324476,1641203,1134726,987259,None]
+    sum_insured_lakh = [13990538,14538353,11625528,10208166,12706726,16781176,18199735,14505586,18560267]
+    area_pmfby_thousand_ha = [30745.39,32150.52,28210.43,24789.65,26331.53,31413.93,32746.10,25977.69,28400.50]
+    area_rwbcis_thousand_ha = [1602.58,1576.76,346.04,334.91,371.49,1119.74,1214.40,960.11,1237.50]
     history = []
     for i, year in enumerate(years):
         history.append({
-            "kharif_year":year,
-            "farmers_covered":farmers[i],
-            "gross_premium_crore":round(gross_premium_lakh[i] / 100, 2),
-            "claims_paid_crore":round(claims_paid_lakh[i] / 100, 2),
-            "sum_insured_crore":round(sum_insured_lakh[i] / 100, 2),
+            "kharif_year": year,
+            "reporting_status": "in_progress" if year == "2026" else "published_dashboard_value",
+            "farmers_shown": farmers[i],
+            "gross_premium_crore": round(gross_premium_lakh[i] / 100, 2),
+            "claims_paid_crore": round(claims_paid_lakh[i] / 100, 2) if claims_paid_lakh[i] is not None else None,
+            "sum_insured_crore": round(sum_insured_lakh[i] / 100, 2),
+            "area_insured_pmfby_thousand_hectares": area_pmfby_thousand_ha[i],
+            "area_insured_rwbcis_thousand_hectares": area_rwbcis_thousand_ha[i],
         })
     latest = history[-1]
-    return result("PMFBY official administrative dashboard (All-India Kharif snapshot)", "available",
-                  {"scope":"All India; Kharif season; national aggregate, not state/district-specific",
-                   "history":history,"latest_completed_year":latest,
-                   "unit_note":"Financial amounts converted from published ₹ lakh to ₹ crore",
-                   "snapshot_last_updated":"2026-09-28"},
+    return result("PMFBY / RWBCIS official administrative dashboard (All-India Kharif)", "available",
+                  {"scope":"All India; Kharif season; PMFBY administrative-dashboard figures, not state/district values",
+                   "history":history,"latest_reported_year":latest,
+                   "unit_note":"Published financial figures are in ₹ lakh; converted to ₹ crore by dividing by 100. Insured area is in thousand hectares.",
+                   "snapshot_last_updated":"2026-09-28 09:09 AM",
+                   "in_progress_year":"2026",
+                   "in_progress_note":"The 2026 Kharif season is in progress in this snapshot. Claims shown as zero on the source are not treated as a final zero; claim amount is marked not final here."},
                   updated="2026-09-28",
-                  note="Snapshot transcribed from the Ministry of Agriculture & Farmers Welfare PMFBY administrative dashboard as last updated 28 September 2026. The 2026 Kharif claims value is excluded because that period is incomplete. These are scheme-level insurance metrics, not agriculture business revenue or profit.",
+                  note="Source: Ministry of Agriculture & Farmers Welfare, PMFBY Administrative Dashboard, Kharif season, last updated 28 September 2026 at 09:09 AM. This is an All-India scheme aggregate, not selected-state/district data. The 2026 Kharif claims figure is intentionally marked not final rather than treating the dashboard's displayed zero as a completed outcome. Gross premium and sum insured are conversions from the published ₹ lakh values.",
                   url="https://pmfby.gov.in/adminStatistics/dashboard")
 
 def official_loan_recovery_gap(state: str, district: str, fy: str):
@@ -854,13 +861,19 @@ def imd_public_warnings(state: str, district: str):
                       url=IMD_DISTRICT_MAP)
 
 def official_finance_reference(state: str, district: str, fy: str):
+    """Verified PM-KISAN scheme terms; this is a scheme reference, never a district payment claim."""
     return result("PM-KISAN official scheme reference", "reference_available",
         {"programme":"Pradhan Mantri Kisan Samman Nidhi (PM-KISAN)",
-         "published_benefit":"Rs 6,000 per year for an eligible farmer family, subject to scheme rules",
-         "selection":{"state":state,"district":district,"financial_year":fy},
-         "data_level":"National scheme reference only",
-         "district_disbursement_data":"Not provided by this reference; no district payment amount is inferred"},
-        note="Official scheme information only, not a live district-wise disbursement feed. District payment amounts require an API-enabled government dataset.",
+         "annual_assistance_inr":6000,
+         "equal_installments_per_year":3,
+         "installment_value_inr_derived":2000,
+         "funding_source":"100% Government of India",
+         "scheme_start_date":"2018-12-01",
+         "beneficiary_basis":"Eligible landholding farmer families, subject to scheme guidelines and exclusion categories",
+         "data_level":"National scheme terms",
+         "selected_geography":{"state":state,"district":district,"financial_year":fy},
+         "district_payment_data_status":"Not provided by this scheme-reference page"},
+        note="Official PM-KISAN scheme terms. The ₹2,000 installment value is arithmetic derived from ₹6,000 per year in three equal installments; it is not a claim that the selected district or any farmer received a payment. Eligibility exclusions and state/UT verification apply.",
         url="https://pmkisan.gov.in/")
 
 def official_insurance_reference(state: str, district: str, fy: str):
@@ -876,9 +889,6 @@ def official_insurance_reference(state: str, district: str, fy: str):
 @app.get("/api/source/{name}")
 def dashboard_source(name: str, state: str, district: str, fy: str):
     """Return one independent dashboard source so the browser can render panels as they finish."""
-    def finance_source():
-        item=ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
-        return item if item.get("status") == "available" else official_finance_reference(state,district,fy)
     def insurance_source():
         item=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
         return item if item.get("status") == "available" else official_insurance_reference(state,district,fy)
@@ -889,7 +899,7 @@ def dashboard_source(name: str, state: str, district: str, fy: str):
         "farm_income": lambda: agricultural_household_income(state,district,fy),
         "loan_recovery": lambda: official_loan_recovery_gap(state,district,fy),
         "pmfby_national": lambda: official_pmfby_national_summary(),
-        "finance": finance_source,
+        "pm_kisan": lambda: official_finance_reference(state,district,fy),
         "insurance": insurance_source,
         "imd_current": lambda: imd_public_warnings(state,district),
     }
@@ -914,9 +924,6 @@ def dashboard(state: str, district: str, fy: str):
                 logging.exception("%s source failed", name)
                 return name, result(source_name, "error", note=f"Source request failed: {type(e).__name__}. Other dashboard sections remain available.")
 
-        def finance_source():
-            item=ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
-            return item if item.get("status") == "available" else official_finance_reference(state,district,fy)
         def insurance_source():
             item=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
             return item if item.get("status") == "available" else official_insurance_reference(state,district,fy)
@@ -928,7 +935,7 @@ def dashboard(state: str, district: str, fy: str):
             ("farm_income", lambda: agricultural_household_income(state,district,fy), "Agricultural household income"),
             ("loan_recovery", lambda: official_loan_recovery_gap(state,district,fy), "Loan recovery"),
             ("pmfby_national", lambda: official_pmfby_national_summary(), "PMFBY national summary"),
-            ("finance", finance_source, "Public finance / scheme data"),
+            ("pm_kisan", lambda: official_finance_reference(state,district,fy), "PM-KISAN agricultural income support"),
             ("insurance", insurance_source, "Crop insurance / risk finance"),
             ("imd_current", lambda: imd_public_warnings(state,district), "IMD district nowcast/warnings"),
         ]

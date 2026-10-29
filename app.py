@@ -919,6 +919,9 @@ def _imd_item_text(item, tag):
             return (child.text or "").strip()
     return ""
 
+# District names that appear in more than one state in the dashboard administrative directory.
+IMD_AMBIGUOUS_DISTRICT_NAMES = {"balrampur", "bilaspur", "hamirpur", "pratapgarh"}
+
 def _imd_exact_district_title(title: str, district: str) -> bool:
     """Only accept an exact district label, never a match buried in forecast prose."""
     title_norm = _norm(title)
@@ -952,8 +955,12 @@ def imd_public_warnings(state: str, district: str):
             row_state = _field(row, "State", "state", "state_name", "stateName", "STATE")
             if _norm(row_district) != _norm(district):
                 continue
-            # Do not treat same-name districts as safe matches without a state match.
-            if not row_state or _norm(row_state) != _norm(state):
+            # When state metadata is present, require it to match.
+            # When absent, only accept district names unique in the administrative directory.
+            if row_state:
+                if _norm(row_state) != _norm(state):
+                    continue
+            elif _norm(district) in IMD_AMBIGUOUS_DISTRICT_NAMES:
                 continue
             matches.append(row)
         if matches:
@@ -995,14 +1002,18 @@ def imd_public_warnings(state: str, district: str):
             parsed.append(rec)
             if not _imd_exact_district_title(title, district):
                 continue
-            # Suppress RSS records with no state label rather than risk a false district alert.
-            if not row_state or _norm(row_state) != _norm(state):
+            # Use explicit state metadata when available; otherwise only accept a
+            # district name unique in the administrative directory.
+            if row_state:
+                if _norm(row_state) != _norm(state):
+                    continue
+            elif _norm(district) in IMD_AMBIGUOUS_DISTRICT_NAMES:
                 continue
             matches.append(rec)
 
         # Do not treat a national feed's latest items as warnings for this district.
         # Multiple same-name records without state metadata are ambiguous and are withheld.
-        if matches and (any(x.get("state") for x in matches) or len(matches) == 1):
+        if matches:
             return result(
                 source, "available",
                 {"state": state, "district": district, "district_match": True,
@@ -1010,7 +1021,7 @@ def imd_public_warnings(state: str, district: str):
                  "feed": "IMD district nowcast RSS", "records": matches[:5],
                  "feed_items_checked": len(parsed)},
                 updated=date.today().isoformat(),
-                note="The alert title exactly matched the selected district. Where the feed supplies state metadata, it was checked against the selected state. The RSS is a live advisory feed; review issue time and validity. The feed may omit state labels, so ambiguous duplicate district names are withheld.",
+                note="The alert title exactly matched the selected district. Where the feed supplies state metadata, it was checked against the selected state. If state metadata is absent, only a district name unique in the administrative directory is accepted; ambiguous names are withheld. Review issue time and validity.",
                 url=IMD_DISTRICT_RSS
             )
         return result(

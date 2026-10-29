@@ -222,92 +222,90 @@ def ceda_districts_for_state(state: str):
         return []
 
 def ceda_agri_market(state: str, district: str, fy: str):
-    """Query public CEDA/AGMARKNET API using its actual states/districts/commodities endpoints."""
-    source = "CEDA Agri Market Data (AGMARKNET mandi prices)"
-    source_url = "https://agmarknet.ceda.ashoka.edu.in/"
+    """Use the Government of India's AGMARKNET OGD API; no CEDA key or guessed IDs required."""
+    source = "Government of India AGMARKNET mandi prices (data.gov.in)"
+    resource_id = "9ef84268-d588-465a-a308-a864a43d0070"
+    api_key = os.getenv("DATA_GOV_IN_API_KEY", "").strip()
+    source_url = "https://www.data.gov.in/resource/current-daily-price-various-commodities-various-markets-mandi"
+    if not api_key:
+        return result(source, "not_configured",
+                      note="Add a valid DATA_GOV_IN_API_KEY in Render. The agriculture resource ID is already built in; you do not need to find or enter an agriculture UUID.",
+                      url=source_url)
     try:
         start, fy_end = fy_dates(fy)
-        end = min(fy_end, date.today().isoformat())
+        today = date.today()
+        end = min(fy_end, today.isoformat())
         if start > end:
-            return result(source, "unavailable", note=f"FY {fy} has no available dates yet. Choose a past or current financial year.", url=source_url)
-
-        state_row = _state_row(state)
-        if state_row is None:
-            return result(source, "unavailable", note=f"AGMARKNET did not list a state matching {state}. No other state was substituted.", url=source_url)
-        state_id = state_row if isinstance(state_row, (int, float)) else _field(state_row, "state_id", "stateId", "id", "value", "state_code")
-        if isinstance(state_row, str):
-            # Some versions return names only; resolve the state ID from common alternate fields if present.
-            state_id = None
-        if state_id is None:
-            return result(source, "unavailable", note="AGMARKNET returned the state name without a usable state ID. No district was guessed.", url=source_url)
-
-        district_rows = _items(_ceda_get("districts", {"state_id": state_id}))
-        district_row = next((x for x in district_rows if _norm(x if isinstance(x, str) else _field(x, "district", "district_name", "name", "label", "districtName")) == _norm(district)), None)
-        if district_row is None:
-            return result(source, "unavailable", note=f"{district} was not found under {state} in the AGMARKNET district list. Check spelling or choose a district suggestion.", data={"district_suggestions":ceda_districts_for_state(state)[:100]}, url=source_url)
-        district_id = district_row if isinstance(district_row, (int, float)) else _field(district_row, "district_id", "districtId", "id", "value", "district_code")
-        if isinstance(district_row, str): district_id = None
-        if district_id is None:
-            return result(source, "unavailable", note="AGMARKNET returned the district name without a usable district ID.", url=source_url)
-
-        commodities = _items(_ceda_get("commodities"))
-        commodity_row = next((x for x in commodities if _norm(x if isinstance(x, str) else _field(x, "commodity", "commodity_name", "name", "label", "display_name", "commodityName")) == "wheat"), None)
-        if commodity_row is None:
-            commodity_row = next((x for x in commodities if "wheat" in _norm(str(x))), None)
-        if commodity_row is None:
-            return result(source, "unavailable", note="The AGMARKNET commodity list did not contain Wheat. No alternative crop or price was invented.", url=source_url)
-        commodity_id = commodity_row if isinstance(commodity_row, (int, float)) else _field(commodity_row, "commodity_id", "commodityId", "id", "value", "commodity_code")
-        if isinstance(commodity_row, str): commodity_id = None
-        if commodity_id is None:
-            return result(source, "unavailable", note="AGMARKNET listed Wheat but did not return its identifier, so a price query cannot be made safely.", url=source_url)
-
-        body = {"state_id":state_id, "district_id":district_id, "commodity_id":commodity_id,
-                "start_date":start, "end_date":end, "calculation_type":"d", "chart_type":"datadownload"}
-        response = HTTP.post(f"{CEDA_LEGACY_API}/prices", json=body, timeout=40)
+            return result(source, "unavailable", note=f"FY {fy} has no dates available yet.", url=source_url)
+        # OGD's current daily mandi-price resource. Request the selected geography
+        # directly; the provider returns current-day records, not a full historical archive.
+        params = {
+            "api-key": api_key, "format": "json", "limit": 1000, "offset": 0,
+            "filters[state]": state, "filters[district]": district,
+        }
+        response = HTTP.get(f"https://api.data.gov.in/resource/{resource_id}", params=params, timeout=35)
         response.raise_for_status()
-        rows = _items(response.json())
-        normalized = []
-        for row in rows:
-            if not isinstance(row, dict): continue
-            date_value = _field(row, "t", "date", "arrival_date", "price_date", "reported_date")
-            # Keep only records in the selected FY window; support both ISO and DD/MM/YYYY dates.
-            parsed_date = None
-            if date_value:
-                try: parsed_date = date.fromisoformat(str(date_value)[:10])
-                except ValueError:
-                    try: parsed_date = datetime.strptime(str(date_value), "%d/%m/%Y").date()
-                    except Exception: parsed_date = None
-            if parsed_date is None:
-                # Do not mix undated records into a financial-year-specific result.
+        payload = response.json()
+        records = payload.get("records", []) if isinstance(payload, dict) else []
+        if not isinstance(records, list):
+            records = []
+        selected = []
+        for row in records:
+            if not isinstance(row, dict):
                 continue
-            if not (date.fromisoformat(start) <= parsed_date <= date.fromisoformat(end)):
+            row_state = _field(row, "state", "state_name")
+            row_district = _field(row, "district", "district_name")
+            if _norm(row_state) != _norm(state) or _norm(row_district) != _norm(district):
                 continue
-            item = {"commodity":_field(row, "cmdty", "commodity", "commodity_name", "commodityName") or "Wheat",
-                    "date":str(date_value) if date_value else None,
-                    "minimum_price_rs_per_quintal":_field(row, "p_min", "min_price", "minimum_price", "minPrice"),
-                    "maximum_price_rs_per_quintal":_field(row, "p_max", "max_price", "maximum_price", "maxPrice"),
-                    "modal_price_rs_per_quintal":_field(row, "p_modal", "modal_price", "price", "modalPrice")}
-            if any(item[k] is not None for k in ("minimum_price_rs_per_quintal", "maximum_price_rs_per_quintal", "modal_price_rs_per_quintal")):
-                normalized.append(item)
-        normalized.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
-        latest = normalized[0] if normalized else None
+            commodity = _field(row, "commodity", "commodity_name")
+            arrival = _field(row, "arrival_date", "arrivalDate", "date")
+            if not arrival:
+                continue
+            try:
+                observed = date.fromisoformat(str(arrival)[:10])
+            except ValueError:
+                try: observed = datetime.strptime(str(arrival), "%d/%m/%Y").date()
+                except ValueError: continue
+            if not (date.fromisoformat(start) <= observed <= date.fromisoformat(end)):
+                continue
+            selected.append({
+                "state": row_state, "district": row_district,
+                "market": _field(row, "market", "market_name"),
+                "commodity": commodity,
+                "variety": _field(row, "variety"),
+                "arrival_date": observed.isoformat(),
+                "minimum_price_rs_per_quintal": _field(row, "min_price", "minimum_price"),
+                "maximum_price_rs_per_quintal": _field(row, "max_price", "maximum_price"),
+                "modal_price_rs_per_quintal": _field(row, "modal_price", "modalprice"),
+            })
+        selected.sort(key=lambda x: x["arrival_date"], reverse=True)
+        latest = selected[0] if selected else None
+        # This public OGD resource is a current daily feed, so older FYs are not
+        # claimed as covered by it. Explain that limitation instead of faking history.
+        if not latest and start < today.isoformat():
+            note = ("The Government OGD API responded, but its current daily mandi-price feed returned no records for this state/district in the selected FY. "
+                    "This resource is not a historical FY archive. Choose the current FY or connect a historical source; no values were inferred.")
+        else:
+            note = ("Official Government of India AGMARKNET mandi-price feed, filtered to the selected state, district and FY date window. "
+                    "This is current daily market data, not crop production or a full historical series. Verify arrival date before decisions.")
         return result(source, "available" if latest else "no_matching_records",
-                      {"commodity":"Wheat","state":state,"district":district,"financial_year":fy,
-                       "latest_available_record":latest,"recent_records":normalized[:12],
-                       "price_unit":"INR per quintal","requested_period_start":start,"requested_period_end":end},
-                      updated=(latest.get("date") if latest else None),
-                      note=f"AGMARKNET mandi prices for Wheat, selected district {district}, {state}, FY {fy} ({start} to {end}). Historical price coverage depends on records returned by the provider. This is mandi price data, not crop production. Credit: Centre for Economic Data & Analysis, Ashoka University.",
-                      url=source_url)
+                      {"state":state,"district":district,"financial_year":fy,"latest_available_record":latest,
+                       "records":selected[:100],"records_returned":len(selected),"period_start":start,"period_end":end,
+                       "price_unit":"INR per quintal"},
+                      updated=(latest.get("arrival_date") if latest else None), note=note, url=source_url)
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "unknown"
-        logging.exception("AGMARKNET API HTTP error")
-        return result(source, "error", note=f"AGMARKNET returned HTTP {code}. The provider rejected or could not complete the request; no substitute values were generated.", url=source_url)
+        logging.exception("AGMARKNET OGD HTTP error")
+        note = "Government OGD rejected the API request."
+        if code in (401, 403): note = "Government OGD rejected the API key. Replace DATA_GOV_IN_API_KEY in Render with a valid key."
+        elif code == 404: note = "The built-in AGMARKNET resource could not be found. Check provider availability."
+        return result(source, "error", note=f"{note} (HTTP {code}).", url=source_url)
     except requests.exceptions.Timeout:
-        logging.exception("AGMARKNET API timed out")
-        return result(source, "error", note="AGMARKNET request timed out. Try again later; no substitute values were generated.", url=source_url)
-    except (requests.exceptions.RequestException, ValueError, TypeError, KeyError) as e:
-        logging.exception("AGMARKNET fetch failed")
-        return result(source, "error", note=f"Could not read AGMARKNET data ({type(e).__name__}). No substitute values were generated.", url=source_url)
+        logging.exception("AGMARKNET OGD timed out")
+        return result(source, "error", note="Government OGD API timed out. Try again later.", url=source_url)
+    except (requests.exceptions.RequestException, ValueError, TypeError) as e:
+        logging.exception("AGMARKNET OGD fetch failed")
+        return result(source, "error", note=f"Could not read Government OGD response ({type(e).__name__}).", url=source_url)
 
 def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: str):
     key=os.getenv("DATA_GOV_IN_API_KEY","").strip()

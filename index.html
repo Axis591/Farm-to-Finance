@@ -100,6 +100,9 @@ function sourceBlock(s){
    ]);
   }
   special='<div class="source-data-scope">'+esc(districtLevel?"DISTRICT LEVEL · "+(selected.district||d.district):"STATE / UT LEVEL · "+d.state)+' · As at 31 Oct 2025</div><div class="data-qualification">'+esc(districtLevel?"Source: Lok Sabha Unstarred Question 2588 (16 Dec 2025), Karnataka district table. Figures aggregate FY 2020–21 to FY 2024–25; they are not the selected financial year alone.":"Source: Lok Sabha Starred Question 121 (9 Dec 2025), state table as at 31 Oct 2025. This is a five-year aggregate. District-level figures from this linked table are available only for Karnataka; other districts show the reported state aggregate. A dash in the source is not a zero.")+'</div>';
+  if(d.state_scheme_info){
+   special+='<div class="scheme-card" style="margin-top:12px"><div class="scheme-label">Additional state crop-insurance scheme</div><div class="scheme-value">'+esc(d.state_scheme_info.name)+'</div><div class="scheme-note">'+esc(d.state_scheme_info.note)+'</div><p><a href="'+esc(d.state_scheme_info.url)+'" target="_blank" rel="noopener">Open official state insurance calculator ↗</a></p></div>';
+  }
  } else if(src.includes("pm-kisan")){
   cards='<div class="scheme-grid">'+schemeCard("Annual assistance","₹6,000","Published national scheme rule")+schemeCard("Installments per year","3 equal installments","₹2,000 each, derived from ₹6,000 ÷ 3")+schemeCard("Funding","100% Government of India","Official scheme description")+schemeCard("Data coverage","Scheme rules only","This page does not report selected-district payments")+'</div><div class="data-qualification">Scheme entitlement is not proof that a named farmer or district received money. Eligibility, exclusions and installment status must be verified using official beneficiary/payment records.</div>';
  } else if(src.includes("pmfby") && src.includes("administrative dashboard")){

@@ -925,29 +925,9 @@ def _imd_exact_district_title(title: str, district: str) -> bool:
     district_norm = _norm(district)
     if not title_norm or not district_norm:
         return False
-    # Common official spelling variants found in Indian district lists.
-    aliases = {
-        "pashchimmedinipur": ["paschim medinipur", "pashchim medinipur", "west midnapore"],
-        "paschimmedinipur": ["paschim medinipur", "pashchim medinipur", "west midnapore"],
-        "purbamedinipur": ["purba medinipur", "east midnapore"],
-        "purvasinghbhum": ["east singhbhum", "purbi singhbhum"],
-        "ahmadabad": ["ahmedabad", "ahmadabad"],
-        "gurugram": ["gurugram", "gurgaon"],
-        "prayagraj": ["prayagraj", "allahabad"],
-        "sri potti sriramulu nellore": ["nellore", "sri potti sriramulu nellore"],
-        "ysr": ["ysr", "kadapa", "cuddapah"],
-        "uttara kannada": ["uttara kannada", "uttarkannada", "north kanara"],
-        "chamarajanagar": ["chamarajanagar", "chamarajnagar"],
-        "kalaburagi": ["kalaburagi", "kalaburgi", "gulbarga"],
-        "yadgir": ["yadgir", "yadgiri"],
-        "baleshwar": ["baleshwar", "balasore"],
-    }
+    # Do not apply state-free aliases: the nationwide RSS does not consistently
+    # include state metadata, so loose aliases can display a different district.
     accepted = {district_norm}
-    for key, names in aliases.items():
-        normalized_names = {_norm(n) for n in names}
-        if district_norm == _norm(key) or district_norm in normalized_names:
-            accepted.add(_norm(key))
-            accepted.update(normalized_names)
     # Labels may be followed only by the word "district"; forecast description text
     # is deliberately never used for geographic matching.
     return title_norm in accepted or title_norm in {name + "district" for name in accepted}
@@ -956,7 +936,7 @@ def _imd_exact_district_title(title: str, district: str) -> bool:
 def imd_public_warnings(state: str, district: str):
     """Return only selected-district warnings; never use unrelated RSS items as alerts."""
     source = "India Meteorological Department (IMD) district nowcast/warnings"
-    api_url = "https://mausam.imd.gov.in/api/warnings_district_api.php"
+    api_url = "https://api.imd.gov.in/api/v1/districtwarning"
 
     # Prefer structured API records with district and, when provided, state metadata.
     try:
@@ -972,7 +952,8 @@ def imd_public_warnings(state: str, district: str):
             row_state = _field(row, "State", "state", "state_name", "stateName", "STATE")
             if _norm(row_district) != _norm(district):
                 continue
-            if row_state and _norm(row_state) != _norm(state):
+            # Do not treat same-name districts as safe matches without a state match.
+            if not row_state or _norm(row_state) != _norm(state):
                 continue
             matches.append(row)
         if matches:
@@ -1014,7 +995,8 @@ def imd_public_warnings(state: str, district: str):
             parsed.append(rec)
             if not _imd_exact_district_title(title, district):
                 continue
-            if row_state and _norm(row_state) != _norm(state):
+            # Suppress RSS records with no state label rather than risk a false district alert.
+            if not row_state or _norm(row_state) != _norm(state):
                 continue
             matches.append(rec)
 
@@ -1081,9 +1063,7 @@ PMFBY_STATE_SUMMARIES = {
     "Goa": {"applications_insured_lakh": 0.0, "area_insured_lakh_ha": 0.0, "sum_insured_crore": 0.9, "farmers_premium_crore": 0.0, "paid_claims_crore": 0.0, "farmers_claims_paid_lakh": 0.0},
     "Gujarat": {"applications_insured_lakh": None, "area_insured_lakh_ha": None, "sum_insured_crore": None, "farmers_premium_crore": None, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
     "Haryana": {"applications_insured_lakh": 330.1, "area_insured_lakh_ha": 68.9, "sum_insured_crore": 51590.1, "farmers_premium_crore": 1439.9, "paid_claims_crore": 5957.8, "farmers_claims_paid_lakh": 66.8},
-    # Area for these two rows is left unreported here because the indexed text extraction
-    # produces values inconsistent with the stated unit; amounts remain as printed.
-    "Himachal Pradesh": {"applications_insured_lakh": 13.6, "area_insured_lakh_ha": None, "sum_insured_crore": 3942.8, "farmers_premium_crore": 152.6, "paid_claims_crore": 374.9, "farmers_claims_paid_lakh": 5.7},
+    "Himachal Pradesh": {"applications_insured_lakh": 13.6, "area_insured_lakh_ha": 224.8, "sum_insured_crore": 3942.8, "farmers_premium_crore": 152.6, "paid_claims_crore": 374.9, "farmers_claims_paid_lakh": 5.7},
     "Jammu and Kashmir": {"applications_insured_lakh": 6.4, "area_insured_lakh_ha": 2.9, "sum_insured_crore": 2241.4, "farmers_premium_crore": 41.3, "paid_claims_crore": 119.9, "farmers_claims_paid_lakh": 2.1},
     "Jharkhand": {"applications_insured_lakh": 27.0, "area_insured_lakh_ha": 13.6, "sum_insured_crore": 9662.4, "farmers_premium_crore": 0.3, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
     "Karnataka": {"applications_insured_lakh": 130.0, "area_insured_lakh_ha": 104.2, "sum_insured_crore": 55832.7, "farmers_premium_crore": 1584.2, "paid_claims_crore": 10006.2, "farmers_claims_paid_lakh": 74.7},
@@ -1100,7 +1080,7 @@ PMFBY_STATE_SUMMARIES = {
     "Telangana": {"applications_insured_lakh": None, "area_insured_lakh_ha": None, "sum_insured_crore": None, "farmers_premium_crore": None, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
     "Tripura": {"applications_insured_lakh": 13.4, "area_insured_lakh_ha": 2.5, "sum_insured_crore": 1735.6, "farmers_premium_crore": 2.1, "paid_claims_crore": 9.7, "farmers_claims_paid_lakh": 1.2},
     "Uttar Pradesh": {"applications_insured_lakh": 293.9, "area_insured_lakh_ha": 138.1, "sum_insured_crore": 81726.2, "farmers_premium_crore": 1461.8, "paid_claims_crore": 3311.7, "farmers_claims_paid_lakh": 58.4},
-    "Uttarakhand": {"applications_insured_lakh": 11.1, "area_insured_lakh_ha": None, "sum_insured_crore": 5643.2, "farmers_premium_crore": 257.2, "paid_claims_crore": 968.5, "farmers_claims_paid_lakh": 6.9},
+    "Uttarakhand": {"applications_insured_lakh": 11.1, "area_insured_lakh_ha": 214.5, "sum_insured_crore": 5643.2, "farmers_premium_crore": 257.2, "paid_claims_crore": 968.5, "farmers_claims_paid_lakh": 6.9},
     "West Bengal": {"applications_insured_lakh": 0.0, "area_insured_lakh_ha": None, "sum_insured_crore": None, "farmers_premium_crore": None, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
 }
 

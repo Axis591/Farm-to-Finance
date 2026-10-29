@@ -525,8 +525,9 @@ def official_agriculture_credit(state: str, district: str, fy: str):
     years = ["2022-23", "2023-24", "2024-25"]
     values = AGRI_CREDIT_DISBURSEMENT[key]
     history = [{"financial_year": y, "amount_crore": v} for y, v in zip(years, values)]
-    top = sorted([{"state": name, "amount_crore": vals[-1]} for name, vals in AGRI_CREDIT_DISBURSEMENT.items()],
-                 key=lambda x: x["amount_crore"], reverse=True)[:10]
+    all_states = sorted([{"state": name, "amount_crore": vals[-1]} for name, vals in AGRI_CREDIT_DISBURSEMENT.items()],
+                        key=lambda x: x["amount_crore"], reverse=True)
+    top = all_states[:10]
     outstanding = AGRI_CREDIT_OUTSTANDING.get(key, (None, None, None))
     groups = [
         {"bank_group": "Scheduled commercial banks", "amount_crore": outstanding[0]},
@@ -537,7 +538,7 @@ def official_agriculture_credit(state: str, district: str, fy: str):
     data = {
         "state": state, "selected_district": district,
         "data_level": "State/UT aggregate; not district-specific",
-        "disbursement_history": history, "top_states_disbursement": top,
+        "disbursement_history": history, "top_states_disbursement": top, "all_states_disbursement": all_states,
         "outstanding_by_bank_group": groups,
         "outstanding_reported_sum_crore": sum(reported) if reported else None,
         "outstanding_total_is_complete": len(reported) == 3,

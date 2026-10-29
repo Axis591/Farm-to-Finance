@@ -8,17 +8,35 @@
 <style>
 :root{--ink:#172b25;--muted:#66756f;--line:#dce5df;--paper:#f5f8f5;--green:#176b4d;--mint:#e5f4eb;--amber:#fff4d8;--red:#fde8e6;--white:#fff}
 *{box-sizing:border-box}body{margin:0;background:var(--paper);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
-header{background:#123d2e;color:white;padding:24px max(20px,calc((100% - 1200px)/2));}
+header{background:#123d2e;color:white;padding:24px 28px 24px 260px;margin-left:0;}
 header .eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:11px;opacity:.8}h1{margin:7px 0;font-size:clamp(24px,4vw,36px)}header p{margin:0;color:#d4e9dc;max-width:850px}
-main{max-width:1200px;margin:22px auto;padding:0 18px 50px}.controls,.card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 4px 16px #143b2a08}
+main{max-width:1500px;margin:22px 24px 22px 250px;padding:0 18px 50px}.controls,.card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 4px 16px #143b2a08}
 .controls{display:grid;grid-template-columns:1.1fr 1.1fr .8fr auto;gap:12px;align-items:end}
 label{font-size:12px;font-weight:700;color:#43554d;display:block;margin-bottom:7px}select,input,button{font:inherit;border-radius:9px;border:1px solid #cbd8cf;padding:11px 12px;width:100%;background:white;color:var(--ink)}button{background:var(--green);color:white;border:0;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:wait}.hint{font-size:12px;color:var(--muted);margin-top:6px}
 #status{margin:15px 0;color:var(--muted);font-size:13px;min-height:20px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin:15px 0}.metric{background:white;border:1px solid var(--line);border-radius:14px;padding:16px;min-height:122px}.metric .k{font-size:12px;color:var(--muted)}.metric .v{font-size:25px;font-weight:750;margin:9px 0 4px;overflow-wrap:anywhere}.metric .s{font-size:11px;color:var(--muted)}
 .sections{display:grid;grid-template-columns:1fr 1fr;gap:14px}.charts-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.plot{border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0;background:#fff}.plot h3{margin:0 0 8px;font-size:14px}.plot .plot-note{font-size:11px;line-height:1.5;color:var(--muted);margin:8px 0 0}.plot svg{width:100%;height:auto;display:block;overflow:visible}.imd-embed{width:100%;height:520px;border:1px solid var(--line);border-radius:10px;margin-top:12px;background:#fff}.district-map{height:390px;width:100%;border-radius:12px;border:1px solid var(--line);overflow:hidden;background:#edf3ee}.map-meta{font-size:12px;color:var(--muted);margin:8px 0 0}.visual-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:12px 0}.visual-stat{border:1px solid var(--line);border-radius:12px;background:#f9fbf9;padding:13px}.visual-stat .ico{font-size:25px;line-height:1.3}.visual-stat .label{font-size:11px;color:var(--muted);margin-top:5px}.visual-stat .value{font-size:20px;font-weight:750;margin-top:4px}.source-details{margin-top:10px}.source-details summary{cursor:pointer;color:var(--green);font-size:12px;font-weight:700}.alert-item{padding:10px 12px;border-radius:10px;background:#fff7e5;border:1px solid #f1dfb4;margin:8px 0}.alert-item .alert-title{font-weight:750}.donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}.donut-legend{font-size:12px;display:grid;gap:7px}.legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}.plot .empty{padding:12px;border-radius:9px;background:#f7faf7;color:var(--muted);font-size:12px;line-height:1.5}.metric .v.small{font-size:16px}.card h2{font-size:17px;margin:0 0 12px}.source{border-top:1px solid var(--line);padding:12px 0}.source:first-of-type{border-top:0}.source-head{display:flex;gap:8px;align-items:center;justify-content:space-between}.pill{font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:5px 7px;border-radius:999px;background:#eef1ef;color:#58655e;white-space:nowrap}.pill.available{background:var(--mint);color:#176b4d}.pill.error,.pill.unavailable{background:var(--red);color:#9a302a}.pill.not_configured,.pill.no_matching_records{background:var(--amber);color:#815d0b}.pill.reference_available{background:#eaf0ff;color:#2f5783}.source p{font-size:12px;color:var(--muted);line-height:1.5;margin:7px 0}.source a{font-size:12px;color:var(--green)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:240px;overflow:auto;background:#f7faf7;padding:10px;border-radius:8px}.wide{grid-column:1/-1}.foot{font-size:12px;color:var(--muted);line-height:1.6;margin-top:16px}
-@media(max-width:850px){.controls{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr 1fr}.sections{grid-template-columns:1fr}.charts-grid{grid-template-columns:1fr}}@media(max-width:480px){.controls{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.metric .v{font-size:20px}}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:226px;background:#10392c;color:#fff;padding:22px 13px;z-index:1000;overflow-y:auto;box-shadow:3px 0 14px #102c2014}.sidebar-brand{font-weight:800;font-size:17px;padding:0 10px 18px;border-bottom:1px solid #ffffff2a;margin-bottom:14px}.sidebar-brand small{display:block;font-weight:400;color:#c9e0d2;font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-top:5px}.sidebar a{display:flex;gap:9px;align-items:center;color:#e4f1e9;text-decoration:none;font-size:13px;padding:11px 10px;border-radius:9px;margin:3px 0}.sidebar a:hover,.sidebar a:focus{background:#235542;color:#fff}.sidebar .nav-section{font-size:10px;color:#a9cbb7;text-transform:uppercase;letter-spacing:.12em;padding:16px 10px 5px}.sidebar .nav-note{font-size:10px;line-height:1.5;color:#bcd3c4;padding:16px 10px}.card{scroll-margin-top:18px}.card:target{outline:2px solid #8ab9a0}.map-card{scroll-margin-top:18px}
+@media(max-width:900px){.sidebar{position:relative;width:100%;height:auto;bottom:auto;display:flex;flex-wrap:wrap;align-items:center;padding:10px;gap:3px}.sidebar-brand{width:100%;padding:6px 8px 10px;margin:0}.sidebar .nav-section,.sidebar .nav-note{display:none}.sidebar a{font-size:12px;padding:8px}.sidebar a span{display:none}header{padding:22px 18px}main{margin:16px 10px;padding:0 8px 35px}.controls{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr 1fr}.sections{grid-template-columns:1fr}.charts-grid{grid-template-columns:1fr}}@media(max-width:480px){.controls{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.metric .v{font-size:20px}.sidebar a{font-size:11px;padding:7px}}
 </style>
 </head>
 <body>
+<aside class="sidebar" aria-label="Dashboard navigation">
+<div class="sidebar-brand">Farm to Finance<small>Research dashboard</small></div>
+<div class="nav-section">Navigate</div>
+<a href="#top"><span>⌂</span> Overview & filters</a>
+<a href="#section-map"><span>⌖</span> District map</a>
+<a href="#section-climate"><span>🌦</span> Climate & hazards</a>
+<a href="#section-imd"><span>⚠</span> IMD warnings</a>
+<a href="#section-agri"><span>🌾</span> Market prices</a>
+<a href="#section-finance"><span>₹</span> Finance & insurance</a>
+<a href="#section-analytics"><span>▥</span> Charts & indicators</a>
+<a href="#section-credit"><span>↗</span> Agricultural credit</a>
+<a href="#section-income"><span>◉</span> Household income</a>
+<a href="#section-pipeline"><span>⇢</span> Farm-to-finance pipeline</a>
+<a href="#section-sources"><span>ⓘ</span> Data sources</a>
+<div class="nav-note">Values are shown only when returned by a source. National/state figures are not treated as district figures.</div>
+</aside>
+<div id="top"></div>
 <header><div class="eyebrow">India · Climate adaptation · Agriculture · Finance</div><h1>Farm to Finance</h1><p>A district-level data workspace connecting agricultural indicators, climate context and public finance sources—with explicit source status and freshness.</p></header>
 <main>
 <section class="controls">
@@ -28,17 +46,17 @@ label{font-size:12px;font-weight:700;color:#43554d;display:block;margin-bottom:7
 <div><button id="refresh">Refresh data</button></div>
 </section>
 <div id="status" role="status">Loading dashboard…</div>
-<section class="card" style="margin-top:14px"><h2>Selected district on map</h2><p class="hint">The marker follows your selected state and district. It is a location marker, not an official district-boundary polygon.</p><div id="districtMap" class="district-map" role="img" aria-label="Map showing the selected district"></div><p id="mapMeta" class="map-meta">Loading district map… · © OpenStreetMap contributors</p></section><section class="grid" id="metrics"></section>
+<section class="card map-card" id="section-map" style="margin-top:14px"><h2>Selected district on map</h2><p class="hint">The marker follows your selected state and district. It is a location marker, not an official district-boundary polygon.</p><div id="districtMap" class="district-map" role="img" aria-label="Map showing the selected district"></div><p id="mapMeta" class="map-meta">Loading district map… · © OpenStreetMap contributors</p></section><section class="grid" id="metrics"></section>
 <section class="sections">
-<div class="card"><h2>Climate & hazard context</h2><div id="climate"></div></div>
-<div class="card"><h2>Current IMD warnings</h2><div id="imd"></div></div>
-<div class="card"><h2>Agricultural market prices (AGMARKNET)</h2><div id="agri"></div></div>
-<div class="card"><h2>Public finance & crop-insurance references</h2><div id="finance"></div><div id="insurance"></div></div>
-<div class="card wide"><h2>Data sources & integration status</h2><div id="sources"></div></div>
-<div class="card wide"><h2>Research charts and key indicators</h2><div id="analytics" class="charts-grid"></div></div>
-<div class="card"><h2>Reported agricultural credit and outstanding loans</h2><div id="credit"></div></div>
-<div class="card"><h2>Estimated agricultural household income</h2><div id="income"></div></div>
-<div class="card wide"><h2>Farm-to-finance pipeline</h2><p class="hint">Opportunity estimates only appear when supported by configured data and an explicitly documented calculation. This starter does not fabricate project savings, funding gaps or eligibility.</p><div id="pipeline"></div></div>
+<div class="card" id="section-climate"><h2>Climate & hazard context</h2><div id="climate"></div></div>
+<div class="card" id="section-imd"><h2>Current IMD warnings</h2><div id="imd"></div></div>
+<div class="card" id="section-agri"><h2>Agricultural market prices (AGMARKNET)</h2><div id="agri"></div></div>
+<div class="card" id="section-finance"><h2>Public finance & crop-insurance references</h2><div id="finance"></div><div id="insurance"></div></div>
+<div class="card wide" id="section-sources"><h2>Data sources & integration status</h2><div id="sources"></div></div>
+<div class="card wide" id="section-analytics"><h2>Research charts and key indicators</h2><div id="analytics" class="charts-grid"></div></div>
+<div class="card" id="section-credit"><h2>Reported agricultural credit and outstanding loans</h2><div id="credit"></div></div>
+<div class="card" id="section-income"><h2>Estimated agricultural household income</h2><div id="income"></div></div>
+<div class="card wide" id="section-pipeline"><h2>Farm-to-finance pipeline</h2><p class="hint">Opportunity estimates only appear when supported by configured data and an explicitly documented calculation. This starter does not fabricate project savings, funding gaps or eligibility.</p><div id="pipeline"></div></div>
 </section>
 <div class="foot" id="disclaimer"></div>
 </main>
@@ -110,7 +128,7 @@ async function updateDistrictMap(state,district){initDistrictMap();if(!district)
 function showDistrictMarker(q,p){districtMap.setView([p.lat,p.lon],9);if(districtMarker)districtMarker.remove();districtMarker=L.marker([p.lat,p.lon]).addTo(districtMap).bindPopup("<strong>"+esc(q)+"</strong>").openPopup();$("mapMeta").textContent="📍 "+q+" · Matched place location; district boundary is not shown. © OpenStreetMap contributors";}
 
 async function refresh(){let state=$("state").value,district=$("district").value,fy=$("fy").value;updateDistrictMap(state,district);if(!district){$("status").textContent="Select a district to load data.";return;}
-$("refresh").disabled=true;$("status").textContent="Fetching sources in the background…";$("metrics").innerHTML="";try{let r=await fetch(`/api/dashboard?state=${encodeURIComponent(state)}&district=${encodeURIComponent(district)}&fy=${encodeURIComponent(fy)}`);if(!r.ok)throw new Error("API returned "+r.status);render(await r.json());}catch(e){$("status").textContent="Could not load dashboard data. Check server connection and logs. "+e.message;}finally{$("refresh").disabled=false;}}
+$("refresh").disabled=true;$("status").textContent="Loading your selected district. Independent sources are being fetched in parallel; slower sources may take a little longer.";$("metrics").innerHTML="";try{let r=await fetch(`/api/dashboard?state=${encodeURIComponent(state)}&district=${encodeURIComponent(district)}&fy=${encodeURIComponent(fy)}`);if(!r.ok)throw new Error("API returned "+r.status);render(await r.json());}catch(e){$("status").textContent="Some data could not be loaded. Please refresh; other available panels will still be shown. "+e.message;}finally{$("refresh").disabled=false;}}
 $("state").addEventListener("change",async()=>{await loadDistrictSuggestions();scheduleRefresh()});
 $("district").addEventListener("change",scheduleRefresh);$("fy").addEventListener("change",scheduleRefresh);$("refresh").addEventListener("click",refresh);
 function scheduleRefresh(){clearTimeout(timer);timer=setTimeout(refresh,350)}

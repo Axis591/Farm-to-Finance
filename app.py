@@ -1,4 +1,4 @@
-import os, time, logging
+import os, time, logging, re
 from datetime import date
 from typing import Optional
 import requests
@@ -144,8 +144,13 @@ def open_meteo_climate(state, district, fy):
 
 def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: str):
     key=os.getenv("DATA_GOV_IN_API_KEY","").strip()
+    resource_id=(resource_id or "").strip()
     if not key or not resource_id:
-        return result(label,"not_configured",note="Configure DATA_GOV_IN_API_KEY and the matching resource ID in the server environment. No value has been fabricated.",url="https://data.gov.in/")
+        return result(label,"not_configured",note="Add DATA_GOV_IN_API_KEY and this dataset's real data.gov.in resource ID in Render. No data has been fabricated.",url="https://data.gov.in/")
+    # data.gov.in resource IDs are UUIDs (with or without hyphens). API keys pasted
+    # into this field are not resource IDs and should not be sent as endpoint paths.
+    if not re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", resource_id):
+        return result(label,"not_configured",note="The value in this resource-ID field is not a valid data.gov.in resource ID format. Replace it with the dataset's UUID from its API details; keep your API key only in DATA_GOV_IN_API_KEY.",url="https://www.data.gov.in/")
     def fetch():
         url=f"https://api.data.gov.in/resource/{resource_id}"
         params={"api-key":key,"format":"json","limit":1000}
@@ -162,9 +167,24 @@ def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: st
                       updated=date.today().isoformat(),note="Records fetched from OGD API and filtered by text match. Verify field names and reporting-period semantics before using in financial decisions.",url=f"https://api.data.gov.in/resource/{resource_id}")
     try:
         return cached(f"ogd:{resource_id}:{state}:{district}:{fy}",fetch)
-    except Exception as e:
+    except requests.exceptions.ConnectionError:
+        logging.exception("OGD connection failed")
+        return result(label,"error",note="Render could not connect to the data.gov.in API. Verify the service has outbound network access and try again later; this is not evidence that the dataset contains zero records.",url="https://data.gov.in/")
+    except requests.exceptions.Timeout:
+        logging.exception("OGD request timed out")
+        return result(label,"error",note="The data.gov.in API request timed out. Try again later or check provider availability and limits.",url="https://data.gov.in/")
+    except requests.exceptions.HTTPError as e:
+        status_code=e.response.status_code if e.response is not None else "unknown"
+        logging.exception("OGD HTTP error")
+        note="data.gov.in rejected the request. Check the API key and resource ID."
+        if status_code in (401,403):
+            note="data.gov.in rejected the API key or access permissions. Verify the key in Render."
+        elif status_code == 404:
+            note="data.gov.in could not find this resource ID. Copy the resource UUID from the dataset's API details."
+        return result(label,"error",note=f"{note} (HTTP {status_code}).",url="https://data.gov.in/")
+    except (ValueError, requests.exceptions.RequestException) as e:
         logging.exception("OGD fetch failed")
-        return result(label,"error",note=f"Provider request failed: {type(e).__name__}. Check resource ID, key, network access, and provider limits.",url="https://data.gov.in/")
+        return result(label,"error",note=f"Could not read the data.gov.in response ({type(e).__name__}). Verify the resource ID, key, and provider availability.",url="https://data.gov.in/")
 
 @app.get("/")
 def home():

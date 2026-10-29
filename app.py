@@ -1,5 +1,5 @@
 import os, time, logging, re
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 import requests
 from fastapi import FastAPI, Query
@@ -120,7 +120,17 @@ def geocode_district(district: str, state: str):
     return scored[0][1]
 
 def open_meteo_climate(state, district, fy):
-    start,end=fy_dates(fy)
+    start, fy_end = fy_dates(fy)
+    # The archive endpoint accepts historical observations only and recent days
+    # may not be published yet. Never send a future fiscal-year end date to it.
+    available_end = (date.today() - timedelta(days=5)).isoformat()
+    end = min(fy_end, available_end)
+    if start > end:
+        return result(
+            "Open-Meteo historical weather", "unavailable",
+            note="This financial year has no published historical weather dates yet. Select a past financial year or try again when observations are available.",
+            url="https://open-meteo.com/",
+        )
     place=geocode_district(district,state)
     if not place:
         return result("Open-Meteo historical weather","unavailable",note="Could not resolve this district to a reliable coordinate. No district value was inferred.",url="https://open-meteo.com/")
@@ -140,7 +150,7 @@ def open_meteo_climate(state, district, fy):
           "max_temperature_mean_c":round(sum(tx)/len(tx),1) if tx else None,
           "min_temperature_mean_c":round(sum(tn)/len(tn),1) if tn else None}
     return result("Open-Meteo historical weather","available" if rain or tx or tn else "unavailable",data,
-                  updated=date.today().isoformat(),note="Gridded/reanalysis estimate for the geocoded location; not an official district aggregate or a formal climate-risk score.",url="https://open-meteo.com/")
+                  updated=date.today().isoformat(),note=f"Historical observations available for {start} to {end} only. The selected financial year ends {fy_end}; future dates and the latest unpublished days are excluded. This is a gridded estimate for the geocoded location, not an official district aggregate or a formal climate-risk score.",url="https://open-meteo.com/")
 
 def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: str):
     key=os.getenv("DATA_GOV_IN_API_KEY","").strip()

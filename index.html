@@ -150,6 +150,7 @@ function sourceBlock(s){
    const title=x.title||x.district||x.District||"IMD district advisory";
    const hasDays=["Day_1","Day_2","Day_3","Day_4","Day_5","day_1","day_2","day_3","day_4","day_5"].some(k=>x[k]!==undefined&&x[k]!==null&&x[k]!=="");
    let desc=x.description||x.warning||x.message||x.text||"";
+   let descHtml=esc(desc||"Open the official IMD district warning map for details.");
    if(hasDays){
     const days=[1,2,3,4,5].map(i=>{
      const code=x["Day_"+i]??x["day_"+i]??x["Day"+i]??x["day"+i];
@@ -160,10 +161,10 @@ function sourceBlock(s){
      const datePart=x.Date||x.date||"";
      return '<div class="hint"><strong>Day '+i+(datePart?" · "+esc(datePart):"")+'</strong>: '+esc(labels.join(", "))+(color!==undefined&&color!==null?" · colour code "+esc(color):"")+'</div>';
     }).filter(Boolean).join("");
-    desc=days||desc||"No day-coded warning values were returned.";
+    descHtml=days||esc(desc||"No day-coded warning values were returned.");
    }
    const t=(title+" "+desc).toLowerCase(),ico=/thunder|lightning|storm/.test(t)?"⛈️":/rain|shower/.test(t)?"🌧️":/cloud|overcast/.test(t)?"☁️":/heat|hot|temperature/.test(t)?"🌡️":/wind|gust/.test(t)?"💨":"🌦️";
-   return '<div class="alert-item"><div class="alert-title">'+ico+' '+esc(title)+'</div><div>'+desc+'</div>'+(x.published||x.Date||x.date?'<div class="hint">Issued: '+esc(x.published||x.Date||x.date)+'</div>':'')+'</div>';
+   return '<div class="alert-item"><div class="alert-title">'+ico+' '+esc(title)+'</div><div>'+descHtml+'</div>'+(x.published||x.Date||x.date?'<div class="hint">Issued: '+esc(x.published||x.Date||x.date)+'</div>':'')+'</div>';
   }).join("");
   else cards='<div class="empty-panel"><div class="empty-icon">⚠️</div><div><strong>No verified warning matched this selected district</strong><p>This is not evidence that no warning exists. Other districts are intentionally hidden; verify the selected district on the official IMD map.</p></div></div>';
  } else if(src.includes("loan recovery / collection")){

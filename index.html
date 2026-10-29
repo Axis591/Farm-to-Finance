@@ -56,7 +56,7 @@ $("metrics").innerHTML=[
 metric("Historical precipitation",c.precipitation_total_mm==null?"Unavailable":fmt(c.precipitation_total_mm," mm"),c.period_start&&c.period_end?`${c.period_start} to ${c.period_end}`:"Climate source not available"),
 metric("Mean daily maximum temperature",c.max_temperature_mean_c==null?"Unavailable":fmt(c.max_temperature_mean_c," °C"),"Average of daily maximums in selected FY"),
 metric("Mean daily minimum temperature",c.min_temperature_mean_c==null?"Unavailable":fmt(c.min_temperature_mean_c," °C"),"Average of daily minimums in selected FY"),
-metric("Available data feeds",[s.agriculture,s.finance,s.insurance].filter(x=>x&&x.status==="available").length+" / 3","Agriculture uses historical AGMARKNET mandi prices; finance/insurance show official scheme references unless a verified district-level dataset is connected")
+metric("Live data feeds",[s.agriculture,s.finance,s.insurance].filter(x=>x&&x.status==="available").length+" / 3","Agriculture uses historical AGMARKNET mandi prices; finance/insurance show official scheme references unless a verified district-level dataset is connected")
 ].join("");
 $("climate").innerHTML=sourceBlock(s.climate);$("imd").innerHTML=sourceBlock(s.imd_current);$("agri").innerHTML=sourceBlock(s.agriculture);
 $("finance").innerHTML=sourceBlock(s.finance);$("insurance").innerHTML=sourceBlock(s.insurance);

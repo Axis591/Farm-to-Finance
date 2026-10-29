@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Farm to Finance | India Climate Finance Intelligence</title>
+<style>
+:root{--ink:#172b25;--muted:#66756f;--line:#dce5df;--paper:#f5f8f5;--green:#176b4d;--mint:#e5f4eb;--amber:#fff4d8;--red:#fde8e6;--white:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
+header{background:#123d2e;color:white;padding:24px max(20px,calc((100% - 1200px)/2));}
+header .eyebrow{letter-spacing:.12em;text-transform:uppercase;font-size:11px;opacity:.8}h1{margin:7px 0;font-size:clamp(24px,4vw,36px)}header p{margin:0;color:#d4e9dc;max-width:850px}
+main{max-width:1200px;margin:22px auto;padding:0 18px 50px}.controls,.card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 4px 16px #143b2a08}
+.controls{display:grid;grid-template-columns:1.1fr 1.1fr .8fr auto;gap:12px;align-items:end}
+label{font-size:12px;font-weight:700;color:#43554d;display:block;margin-bottom:7px}select,input,button{font:inherit;border-radius:9px;border:1px solid #cbd8cf;padding:11px 12px;width:100%;background:white;color:var(--ink)}button{background:var(--green);color:white;border:0;font-weight:700;cursor:pointer}button:disabled{opacity:.6;cursor:wait}.hint{font-size:12px;color:var(--muted);margin-top:6px}
+#status{margin:15px 0;color:var(--muted);font-size:13px;min-height:20px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin:15px 0}.metric{background:white;border:1px solid var(--line);border-radius:14px;padding:16px;min-height:122px}.metric .k{font-size:12px;color:var(--muted)}.metric .v{font-size:25px;font-weight:750;margin:9px 0 4px;overflow-wrap:anywhere}.metric .s{font-size:11px;color:var(--muted)}
+.sections{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card h2{font-size:17px;margin:0 0 12px}.source{border-top:1px solid var(--line);padding:12px 0}.source:first-of-type{border-top:0}.source-head{display:flex;gap:8px;align-items:center;justify-content:space-between}.pill{font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:5px 7px;border-radius:999px;background:#eef1ef;color:#58655e;white-space:nowrap}.pill.available{background:var(--mint);color:#176b4d}.pill.error,.pill.unavailable{background:var(--red);color:#9a302a}.pill.not_configured,.pill.no_matching_records{background:var(--amber);color:#815d0b}.source p{font-size:12px;color:var(--muted);line-height:1.5;margin:7px 0}.source a{font-size:12px;color:var(--green)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:240px;overflow:auto;background:#f7faf7;padding:10px;border-radius:8px}.wide{grid-column:1/-1}.foot{font-size:12px;color:var(--muted);line-height:1.6;margin-top:16px}
+@media(max-width:850px){.controls{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr 1fr}.sections{grid-template-columns:1fr}}@media(max-width:480px){.controls{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.metric .v{font-size:20px}}
+</style>
+</head>
+<body>
+<header><div class="eyebrow">India · Climate adaptation · Agriculture · Finance</div><h1>Farm to Finance</h1><p>A district-level data workspace connecting agricultural indicators, climate context and public finance sources—with explicit source status and freshness.</p></header>
+<main>
+<section class="controls">
+<div><label for="state">STATE / UNION TERRITORY</label><select id="state"></select></div>
+<div><label for="district">DISTRICT</label><input id="district" list="districts" placeholder="Choose or type district" value="Paschim Medinipur"><datalist id="districts"></datalist><div class="hint" id="districtHint">Suggestions are geocoding-based, not an official district register.</div></div>
+<div><label for="fy">FINANCIAL YEAR</label><select id="fy"></select></div>
+<div><button id="refresh">Refresh data</button></div>
+</section>
+<div id="status" role="status">Loading dashboard…</div>
+<section class="grid" id="metrics"></section>
+<section class="sections">
+<div class="card"><h2>Climate & hazard context</h2><div id="climate"></div></div>
+<div class="card"><h2>Current IMD warnings</h2><div id="imd"></div></div>
+<div class="card"><h2>Agriculture & crop statistics</h2><div id="agri"></div></div>
+<div class="card"><h2>Finance & risk transfer</h2><div id="finance"></div><div id="insurance"></div></div>
+<div class="card wide"><h2>Data sources & integration status</h2><div id="sources"></div></div>
+<div class="card wide"><h2>Farm-to-finance pipeline</h2><p class="hint">Opportunity estimates only appear when supported by configured data and an explicitly documented calculation. This starter does not fabricate project savings, funding gaps or eligibility.</p><div id="pipeline"></div></div>
+</section>
+<div class="foot" id="disclaimer"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let timer=null;
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function fmt(v,suffix=""){return v===null||v===undefined||v===""?"Unavailable":Number.isFinite(Number(v))?Number(v).toLocaleString("en-IN",{maximumFractionDigits:1})+suffix:String(v);}
+function pill(status){return `<span class="pill ${esc(status)}">${esc((status||"unknown").replaceAll("_"," "))}</span>`}
+function sourceBlock(s){if(!s)return `<div class="source">${pill("unavailable")}<p>No source response.</p></div>`;
+let body=s.data?`<pre>${esc(JSON.stringify(s.data,null,2))}</pre>`:"";
+return `<div class="source"><div class="source-head"><strong>${esc(s.source||"Data source")}</strong>${pill(s.status)}</div><p>${esc(s.note||"No additional note.")}${s.updated_at?" · Updated: "+esc(s.updated_at):""}</p>${s.url?`<a href="${esc(s.url)}" target="_blank" rel="noopener">Open source ↗</a>`:""}${body}</div>`}
+async function loadStates(){let r=await fetch("/api/states");let j=await r.json();$("state").innerHTML=j.states.map(s=>`<option>${esc(s)}</option>`).join("");$("state").value="West Bengal";fillFY();await loadDistrictSuggestions();await refresh();}
+function fillFY(){let y=new Date().getFullYear();let opts=[];for(let start=2020;start<=y;start++)opts.push(`${start}-${String(start+1).slice(-2)}`);$("fy").innerHTML=opts.map(x=>`<option>${x}</option>`).join("");$("fy").value=opts[opts.length-1];}
+async function loadDistrictSuggestions(){const state=$("state").value; $("districtHint").textContent="Loading district suggestions…";try{let r=await fetch("/api/districts?state="+encodeURIComponent(state));let j=await r.json();$("districts").innerHTML=(j.districts||[]).map(d=>`<option value="${esc(d)}"></option>`).join("");$("districtHint").textContent=j.note||"Type a district if not listed.";}catch{$("districtHint").textContent="Suggestions unavailable; type the district name.";}}
+function metric(label,value,sub){return `<div class="metric"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div><div class="s">${esc(sub||"")}</div></div>`}
+function render(j){
+const s=j.sources||{}, c=s.climate?.data||{};
+$("metrics").innerHTML=[
+metric("Historical precipitation",c.precipitation_total_mm==null?"Unavailable":fmt(c.precipitation_total_mm," mm"),c.period_start&&c.period_end?`${c.period_start} to ${c.period_end}`:"Climate source not available"),
+metric("Mean daily maximum temperature",c.max_temperature_mean_c==null?"Unavailable":fmt(c.max_temperature_mean_c," °C"),"Average of daily maximums in selected FY"),
+metric("Mean daily minimum temperature",c.min_temperature_mean_c==null?"Unavailable":fmt(c.min_temperature_mean_c," °C"),"Average of daily minimums in selected FY"),
+metric("Configured official data feeds",[s.agriculture,s.finance,s.insurance].filter(x=>x&&x.status==="available").length+" / 3","OGD resource IDs and API key required")
+].join("");
+$("climate").innerHTML=sourceBlock(s.climate);$("imd").innerHTML=sourceBlock(s.imd_current);$("agri").innerHTML=sourceBlock(s.agriculture);
+$("finance").innerHTML=sourceBlock(s.finance);$("insurance").innerHTML=sourceBlock(s.insurance);
+$("sources").innerHTML=Object.values(s).map(sourceBlock).join("");
+$("pipeline").innerHTML=`<p>Selected: <strong>${esc(j.selection.state)}, ${esc(j.selection.district)}, FY ${esc(j.selection.fy)}</strong></p><p class="hint">Investment amount, savings, eligibility, crop loss and funding gap are not computed until validated local indicators and calculation rules are configured. This avoids presenting illustrative assumptions as observed facts.</p>`;
+$("disclaimer").textContent=j.disclaimer||"";
+$("status").textContent=`Showing ${j.selection.state} · ${j.selection.district} · FY ${j.selection.fy}. Response generated ${j.generated_at}. Some sources may be unavailable or require credentials.`;
+}
+async function refresh(){let state=$("state").value,district=$("district").value.trim(),fy=$("fy").value;if(!district){$("status").textContent="Enter a district to load data.";return;}
+$("refresh").disabled=true;$("status").textContent="Fetching sources in the background…";$("metrics").innerHTML="";try{let r=await fetch(`/api/dashboard?state=${encodeURIComponent(state)}&district=${encodeURIComponent(district)}&fy=${encodeURIComponent(fy)}`);if(!r.ok)throw new Error("API returned "+r.status);render(await r.json());}catch(e){$("status").textContent="Could not load dashboard data. Check server connection and logs. "+e.message;}finally{$("refresh").disabled=false;}}
+$("state").addEventListener("change",async()=>{await loadDistrictSuggestions();scheduleRefresh()});
+$("district").addEventListener("change",scheduleRefresh);$("fy").addEventListener("change",scheduleRefresh);$("refresh").addEventListener("click",refresh);
+function scheduleRefresh(){clearTimeout(timer);timer=setTimeout(refresh,350)}
+loadStates().catch(e=>$("status").textContent="Setup error: "+e.message);
+</script>
+</body></html>

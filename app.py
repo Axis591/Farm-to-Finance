@@ -686,6 +686,77 @@ def official_loan_recovery_gap(state: str, district: str, fy: str):
                   note="The linked Lok Sabha/NABARD table reports credit disbursement flows and outstanding loan balances, not repayments collected. Recovery cannot be calculated by subtracting one from the other. A separate district-wise recovery dataset is required.",
                   url=AGRI_CREDIT_SOURCE)
 
+
+IMD_DISTRICT_RSS = "https://mausam.imd.gov.in/imd_latest/contents/dist_nowcast_rss.php"
+IMD_DISTRICT_MAP = "https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php"
+
+def _imd_item_text(item, tag):
+    for child in list(item):
+        if child.tag.split("}")[-1].casefold() == tag.casefold():
+            return (child.text or "").strip()
+    return ""
+
+def imd_public_warnings(state: str, district: str):
+    """Use the public IMD district nowcast RSS; fall back to clearly linked official warning map."""
+    source = "India Meteorological Department (IMD) district nowcast/warnings"
+    # IMD's documented API has a district ID parameter and may deny unregistered clients.
+    # The public RSS avoids inventing an Obj_id. Only return a district-specific warning
+    # when the district can be matched in the item text.
+    try:
+        response = HTTP.get(IMD_DISTRICT_RSS, timeout=25, headers={"Accept":"application/rss+xml, application/xml, text/xml"})
+        response.raise_for_status()
+        payload = response.content
+        root = ET.fromstring(payload)
+        items = [el for el in root.iter() if el.tag.split("}")[-1].casefold() == "item"]
+        parsed = []
+        district_norm = _norm(district)
+        aliases = {
+            "paschimmedinipur": ["paschim medinipur","pashchim medinipur","west midnapore"],
+            "purba medinipur": ["purba medinipur","east midnapore"],
+            "ahmadabad": ["ahmedabad","ahmadabad"],
+            "gurugram": ["gurugram","gurgaon"],
+            "prayagraj": ["prayagraj","allahabad"],
+            "sri potti sriramulu nellore": ["nellore","sri potti sriramulu nellore"],
+            "ysr": ["ysr","kadapa","cuddapah"],
+        }
+        wanted = {_norm(district)}
+        for key, vals in aliases.items():
+            if _norm(key) == district_norm or any(_norm(v) == district_norm for v in vals):
+                wanted.update(_norm(v) for v in vals)
+                wanted.add(_norm(key))
+        for item in items:
+            title = _imd_item_text(item, "title")
+            description = _imd_item_text(item, "description")
+            pub_date = _imd_item_text(item, "pubDate")
+            link = _imd_item_text(item, "link")
+            guid = _imd_item_text(item, "guid")
+            body = " ".join(x for x in (title, description, pub_date) if x)
+            if body:
+                parsed.append({"title":title, "description":description, "published":pub_date, "link":link or guid or IMD_DISTRICT_MAP})
+        matches = [row for row in parsed if any(alias in _norm(row["title"] + " " + row["description"]) for alias in wanted if len(alias) >= 5)]
+        if matches:
+            return result(source, "available",
+                          {"state":state,"district":district,"feed":"IMD district nowcast RSS","records":matches[:10],
+                           "feed_items_checked":len(parsed),"district_match":True},
+                          updated=date.today().isoformat(),
+                          note="District-specific text was matched in IMD's public district nowcast RSS feed. This is current nowcast/warning information, not a historical FY series. Confirm issue time and validity before acting.",
+                          url=IMD_DISTRICT_RSS)
+        # Successful public feed but no text match is NOT interpreted as no warning.
+        return result(source, "reference_available",
+                      {"state":state,"district":district,"feed":"IMD public district nowcast RSS",
+                       "feed_items_checked":len(parsed),"latest_feed_items":parsed[:8],
+                       "district_match":False,"official_district_warning_map":IMD_DISTRICT_MAP},
+                      updated=date.today().isoformat(),
+                      note="IMD's public RSS loaded, but its item text did not confidently identify this selected district. This is not evidence that there is no warning. Use the official district-wise warning map for the live colour-coded district forecast.",
+                      url=IMD_DISTRICT_MAP)
+    except Exception as e:
+        logging.exception("IMD public RSS unavailable")
+        return result(source, "reference_available",
+                      {"state":state,"district":district,"official_district_warning_map":IMD_DISTRICT_MAP,
+                       "official_nowcast_rss":IMD_DISTRICT_RSS},
+                      note=f"The public RSS could not be read by this service ({type(e).__name__}); IMD's official live warning map remains linked. The protected JSON API requires a valid district ID and may require IMD access authorization. Do not interpret this as 'no warning'.",
+                      url=IMD_DISTRICT_MAP)
+
 def official_finance_reference(state: str, district: str, fy: str):
     return result("PM-KISAN official scheme reference", "reference_available",
         {"programme":"Pradhan Mantri Kisan Samman Nidhi (PM-KISAN)",
@@ -724,52 +795,8 @@ def dashboard(state: str, district: str, fy: str):
         sources["finance"] = finance if finance.get("status") == "available" else official_finance_reference(state,district,fy)
         insurance = ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
         sources["insurance"] = insurance if insurance.get("status") == "available" else official_insurance_reference(state,district,fy)
-        # IMD district warnings are current context, not historical FY data.
-        # Try the documented IMD API first, then the public Mausam district-warning
-        # endpoint as a fallback. Keep provider errors explicit rather than fabricating data.
-        imd_urls = [
-            "https://api.imd.gov.in/api/v1/districtwarning",
-            "https://mausam.imd.gov.in/api/warnings_district_api.php",
-        ]
-        imd_errors = []
-        imd_loaded = False
-        for imd_url in imd_urls:
-            try:
-                r = HTTP.get(imd_url, timeout=20)
-                r.raise_for_status()
-                raw = r.json()
-                records = raw if isinstance(raw, list) else raw.get("data", raw.get("records", raw.get("warnings", []))) if isinstance(raw, dict) else []
-                if isinstance(records, dict):
-                    records = list(records.values())
-                if not isinstance(records, list):
-                    records = []
-                matched = []
-                for row in records:
-                    if not isinstance(row, dict):
-                        continue
-                    row_district = str(row.get("District", row.get("district", row.get("district_name", ""))))
-                    if district.strip().casefold() == row_district.strip().casefold():
-                        matched.append(row)
-                if matched:
-                    sources["imd_current"] = result(
-                        "India Meteorological Department (IMD) district warnings", "available",
-                        {"records": matched[:10]}, updated=date.today().isoformat(),
-                        note="Current IMD district warning feed; not a historical FY dataset. Verify issue date and district identity before operational use.",
-                        url=imd_url)
-                    imd_loaded = True
-                    break
-                # A successful but unrecognized payload is not evidence that there are no warnings.
-                if records:
-                    imd_errors.append("Provider responded but district records could not be matched")
-                else:
-                    imd_errors.append("Provider returned no recognizable records")
-            except Exception as e:
-                imd_errors.append(type(e).__name__)
-        if not imd_loaded:
-            sources["imd_current"] = result(
-                "India Meteorological Department (IMD) district warnings", "unavailable",
-                note="Could not retrieve and match district warnings from the documented IMD endpoint or the public Mausam fallback. Check provider availability and district spelling; do not interpret this as 'no warning'.",
-                url="https://api.imd.gov.in/public/api_reference.html")
+        # Current public IMD district warning/nowcast source; never infer no warning from a missing match.
+        sources["imd_current"] = imd_public_warnings(state, district)
 
         return {"selection":{"state":state,"district":district,"fy":fy},"generated_at":date.today().isoformat(),"sources":sources,
           "disclaimer":"Credit disbursement is state/UT-level from a Ministry of Finance Lok Sabha answer dated 23 March 2026, not district-specific. Outstanding loans are provisional as of 31 December 2025. Agricultural-household income is a model-based estimate for July 2018–June 2019, not farm profit or current revenue. Loan repayments and farm-business profit are not inferred where verified data are unavailable. CEDA/AGMARKNET reports mandi prices, not crop production. Climate uses gridded weather estimates."}

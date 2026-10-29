@@ -924,15 +924,157 @@ def official_finance_reference(state: str, district: str, fy: str):
         note="Official PM-KISAN scheme terms. The ₹2,000 installment value is arithmetic derived from ₹6,000 per year in three equal installments; it is not a claim that the selected district or any farmer received a payment. Eligibility exclusions and state/UT verification apply.",
         url="https://pmkisan.gov.in/")
 
-def official_insurance_reference(state: str, district: str, fy: str):
-    return result("Pradhan Mantri Fasal Bima Yojana (PMFBY) official reference", "reference_available",
-        {"programme":"Pradhan Mantri Fasal Bima Yojana (PMFBY)",
-         "purpose":"Crop insurance under notified crops, seasons, areas and policy conditions",
-         "selection":{"state":state,"district":district,"financial_year":fy},
-         "data_level":"Scheme reference only",
-         "district_insured_area_premium_and_claims":"Not supplied by this reference; no district values are inferred"},
-        note="Official crop-insurance scheme reference only, not a district-level claims or premiums API. District statistics require an API-enabled dataset.",
-        url="https://pmfby.gov.in/")
+# PMFBY/RWBCIS state-wise 5-year snapshot transcribed from Government of India,
+# Lok Sabha Starred Question 121, answered 9 Dec 2025; data as on 31 Oct 2025.
+# Units in the source: applications/farmer-claims in lakh; area in lakh ha;
+# sum insured, farmers' premium, and claims in ₹ crore. A dash means not reported.
+PMFBY_STATE_SUMMARIES = {
+    "Andaman and Nicobar Islands": {"applications_insured_lakh": 0.0, "area_insured_lakh_ha": 0.0, "sum_insured_crore": 6.1, "farmers_premium_crore": 0.0, "paid_claims_crore": 0.0, "farmers_claims_paid_lakh": 0.0},
+    "Andhra Pradesh": {"applications_insured_lakh": 348.8, "area_insured_lakh_ha": 110.1, "sum_insured_crore": 99031.4, "farmers_premium_crore": 32.9, "paid_claims_crore": 747.1, "farmers_claims_paid_lakh": 14.6},
+    "Assam": {"applications_insured_lakh": 51.0, "area_insured_lakh_ha": 30.4, "sum_insured_crore": 23501.6, "farmers_premium_crore": 19.3, "paid_claims_crore": 605.7, "farmers_claims_paid_lakh": 8.5},
+    "Bihar": {"applications_insured_lakh": None, "area_insured_lakh_ha": None, "sum_insured_crore": None, "farmers_premium_crore": None, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
+    "Chhattisgarh": {"applications_insured_lakh": 349.3, "area_insured_lakh_ha": 118.8, "sum_insured_crore": 51701.0, "farmers_premium_crore": 1031.0, "paid_claims_crore": 3709.2, "farmers_claims_paid_lakh": 82.2},
+    "Goa": {"applications_insured_lakh": 0.0, "area_insured_lakh_ha": 0.0, "sum_insured_crore": 0.9, "farmers_premium_crore": 0.0, "paid_claims_crore": 0.0, "farmers_claims_paid_lakh": 0.0},
+    "Gujarat": {"applications_insured_lakh": None, "area_insured_lakh_ha": None, "sum_insured_crore": None, "farmers_premium_crore": None, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
+    "Haryana": {"applications_insured_lakh": 330.1, "area_insured_lakh_ha": 68.9, "sum_insured_crore": 51590.1, "farmers_premium_crore": 1439.9, "paid_claims_crore": 5957.8, "farmers_claims_paid_lakh": 66.8},
+    # Area for these two rows is left unreported here because the indexed text extraction
+    # produces values inconsistent with the stated unit; amounts remain as printed.
+    "Himachal Pradesh": {"applications_insured_lakh": 13.6, "area_insured_lakh_ha": None, "sum_insured_crore": 3942.8, "farmers_premium_crore": 152.6, "paid_claims_crore": 374.9, "farmers_claims_paid_lakh": 5.7},
+    "Jammu and Kashmir": {"applications_insured_lakh": 6.4, "area_insured_lakh_ha": 2.9, "sum_insured_crore": 2241.4, "farmers_premium_crore": 41.3, "paid_claims_crore": 119.9, "farmers_claims_paid_lakh": 2.1},
+    "Jharkhand": {"applications_insured_lakh": 27.0, "area_insured_lakh_ha": 13.6, "sum_insured_crore": 9662.4, "farmers_premium_crore": 0.3, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
+    "Karnataka": {"applications_insured_lakh": 130.0, "area_insured_lakh_ha": 104.2, "sum_insured_crore": 55832.7, "farmers_premium_crore": 1584.2, "paid_claims_crore": 10006.2, "farmers_claims_paid_lakh": 74.7},
+    "Kerala": {"applications_insured_lakh": 7.2, "area_insured_lakh_ha": 3.2, "sum_insured_crore": 2575.9, "farmers_premium_crore": 50.4, "paid_claims_crore": 573.0, "farmers_claims_paid_lakh": 4.0},
+    "Madhya Pradesh": {"applications_insured_lakh": 717.5, "area_insured_lakh_ha": 516.3, "sum_insured_crore": 206092.4, "farmers_premium_crore": 3708.1, "paid_claims_crore": 13863.4, "farmers_claims_paid_lakh": 210.3},
+    "Maharashtra": {"applications_insured_lakh": 792.5, "area_insured_lakh_ha": 501.1, "sum_insured_crore": 232654.1, "farmers_premium_crore": 2684.2, "paid_claims_crore": 26342.0, "farmers_claims_paid_lakh": 369.1},
+    "Manipur": {"applications_insured_lakh": 0.2, "area_insured_lakh_ha": 0.1, "sum_insured_crore": 89.8, "farmers_premium_crore": 1.8, "paid_claims_crore": 6.7, "farmers_claims_paid_lakh": 0.1},
+    "Meghalaya": {"applications_insured_lakh": 0.9, "area_insured_lakh_ha": 0.3, "sum_insured_crore": 254.8, "farmers_premium_crore": 0.1, "paid_claims_crore": 24.0, "farmers_claims_paid_lakh": 0.3},
+    "Odisha": {"applications_insured_lakh": 547.9, "area_insured_lakh_ha": 63.9, "sum_insured_crore": 46769.5, "farmers_premium_crore": 450.6, "paid_claims_crore": 2579.5, "farmers_claims_paid_lakh": 84.7},
+    "Puducherry": {"applications_insured_lakh": 1.8, "area_insured_lakh_ha": 0.6, "sum_insured_crore": 413.7, "farmers_premium_crore": 0.1, "paid_claims_crore": 10.8, "farmers_claims_paid_lakh": 0.3},
+    "Rajasthan": {"applications_insured_lakh": 1598.8, "area_insured_lakh_ha": 533.1, "sum_insured_crore": 226623.8, "farmers_premium_crore": 4568.4, "paid_claims_crore": 18851.2, "farmers_claims_paid_lakh": 389.8},
+    "Sikkim": {"applications_insured_lakh": 0.1, "area_insured_lakh_ha": 0.0, "sum_insured_crore": 12.7, "farmers_premium_crore": 0.4, "paid_claims_crore": 0.0, "farmers_claims_paid_lakh": 0.0},
+    "Tamil Nadu": {"applications_insured_lakh": 287.6, "area_insured_lakh_ha": 76.3, "sum_insured_crore": 48786.4, "farmers_premium_crore": 809.9, "paid_claims_crore": 5829.9, "farmers_claims_paid_lakh": 117.7},
+    "Telangana": {"applications_insured_lakh": None, "area_insured_lakh_ha": None, "sum_insured_crore": None, "farmers_premium_crore": None, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
+    "Tripura": {"applications_insured_lakh": 13.4, "area_insured_lakh_ha": 2.5, "sum_insured_crore": 1735.6, "farmers_premium_crore": 2.1, "paid_claims_crore": 9.7, "farmers_claims_paid_lakh": 1.2},
+    "Uttar Pradesh": {"applications_insured_lakh": 293.9, "area_insured_lakh_ha": 138.1, "sum_insured_crore": 81726.2, "farmers_premium_crore": 1461.8, "paid_claims_crore": 3311.7, "farmers_claims_paid_lakh": 58.4},
+    "Uttarakhand": {"applications_insured_lakh": 11.1, "area_insured_lakh_ha": None, "sum_insured_crore": 5643.2, "farmers_premium_crore": 257.2, "paid_claims_crore": 968.5, "farmers_claims_paid_lakh": 6.9},
+    "West Bengal": {"applications_insured_lakh": 0.0, "area_insured_lakh_ha": None, "sum_insured_crore": None, "farmers_premium_crore": None, "paid_claims_crore": None, "farmers_claims_paid_lakh": None},
+}
+
+# District-level crop insurance coverage/claims for Karnataka from Government of India,
+# Lok Sabha Unstarred Question 2588, answered 16 Dec 2025; coverage 2020-21 to 2024-25,
+# figures as on 31 Oct 2025. Financial values are ₹ crore; area in lakh hectares.
+PMFBY_KARNATAKA_DISTRICT = {
+    "Bagalkot": (201427, 2.30, 1382.15, 42.54, 295.75, 97704),
+    "Ballari": (75844, 0.72, 455.57, 11.03, 44.67, 28428),
+    "Belagavi": (328700, 2.73, 1716.61, 53.55, 361.22, 145225),
+    "Bengaluru Rural": (41526, 0.17, 96.14, 2.81, 10.93, 16605),
+    "Bengaluru Urban": (3091, 0.01, 6.78, 0.20, 1.07, 1287),
+    "Bidar": (1294302, 8.38, 3151.56, 62.90, 232.26, 608296),
+    "Chamarajanagar": (77990, 0.40, 155.42, 3.34, 15.62, 27694),
+    "Chikkaballapur": (210129, 0.98, 587.00, 15.23, 151.21, 143757),
+    "Chikkamagaluru": (248281, 1.34, 1220.73, 58.99, 278.67, 141991),
+    "Chitradurga": (581527, 6.94, 3443.35, 80.15, 559.91, 248212),
+    "Dakshina Kannada": (857238, 2.22, 2458.46, 122.82, 880.55, 517156),
+    "Davangere": (267241, 2.00, 1414.33, 43.70, 335.32, 171939),
+    "Dharwad": (862748, 9.05, 3990.59, 114.10, 534.18, 428555),
+    "Gadag": (1081988, 13.25, 5781.39, 144.39, 1119.02, 725367),
+    "Hassan": (509126, 2.22, 970.31, 28.97, 186.89, 255647),
+    "Haveri": (1454731, 11.01, 6186.39, 147.99, 1256.37, 1082578),
+    "Kalaburagi": (676778, 7.95, 3440.31, 72.57, 730.45, 799443),
+    "Kodagu": (14545, 0.09, 55.09, 2.57, 9.95, 7596),
+    "Kolar": (93469, 0.45, 233.68, 8.78, 35.66, 50272),
+    "Koppal": (580117, 6.38, 2815.63, 61.09, 301.81, 265259),
+    "Mandya": (295869, 0.82, 307.24, 5.77, 71.53, 178456),
+    "Mysuru": (41662, 0.18, 74.67, 1.72, 7.07, 15356),
+    "Raichur": (336102, 4.00, 2347.83, 52.73, 153.97, 93764),
+    "Ramanagara": (60998, 0.31, 184.92, 7.77, 57.90, 37583),
+    "Shivamogga": (437205, 2.24, 2304.14, 98.83, 496.72, 299067),
+    "Tumakuru": (646346, 3.84, 2099.58, 63.28, 250.80, 313788),
+    "Udupi": (62774, 0.16, 181.25, 8.86, 55.70, 33702),
+    "Uttara Kannada": (757386, 2.37, 2006.07, 76.08, 305.18, 421818),
+    "Vijayanagara": (181837, 1.64, 909.24, 18.77, 219.80, 140485),
+    "Vijayapura": (654244, 9.37, 5452.65, 162.54, 1015.20, 360493),
+    "Yadgir": (59865, 0.73, 403.58, 10.15, 30.79, 29406),
+}
+PMFBY_DISTRICT_ALIASES = {
+    "chamarajnagar": "Chamarajanagar", "kalaburgi": "Kalaburagi",
+    "uttarkannada": "Uttara Kannada", "yadgiri": "Yadgir",
+    "hasan": "Hassan", "dakshinakannada": "Dakshina Kannada",
+}
+
+def official_agricultural_insurance(state: str, district: str, fy: str):
+    """Published PMFBY/RWBCIS multi-year snapshot; district-level rows only where the official annexure supplies them."""
+    state_row = next((dict(row, state=name) for name, row in PMFBY_STATE_SUMMARIES.items()
+                      if _norm(name) == _norm(state)), None)
+    district_name = district
+    for alias, canonical in PMFBY_DISTRICT_ALIASES.items():
+        if _norm(alias) == _norm(district):
+            district_name = canonical
+            break
+    district_data = None
+    if _norm(state) == _norm("Karnataka"):
+        key = next((name for name in PMFBY_KARNATAKA_DISTRICT
+                    if _norm(name) == _norm(district_name)), None)
+        if key:
+            applications, area, insured, farmer_premium, claims, farmers_benefitted = PMFBY_KARNATAKA_DISTRICT[key]
+            district_data = {
+                "district": key, "applications_enrolled": applications, "area_insured_lakh_ha": area,
+                "sum_insured_crore": insured, "farmers_premium_crore": farmer_premium,
+                "paid_claims_crore": claims, "farmers_benefitted": farmers_benefitted,
+                "geographic_scope": "district",
+            }
+    comparisons = []
+    for name, row in PMFBY_STATE_SUMMARIES.items():
+        if row.get("sum_insured_crore") is not None:
+            comparisons.append({"state": name, "sum_insured_crore": row["sum_insured_crore"]})
+    comparisons.sort(key=lambda x: x["sum_insured_crore"], reverse=True)
+    claims_comparison = [{"state": name, "paid_claims_crore": row["paid_claims_crore"]}
+                         for name, row in PMFBY_STATE_SUMMARIES.items()
+                         if row.get("paid_claims_crore") is not None]
+    claims_comparison.sort(key=lambda x: x["paid_claims_crore"], reverse=True)
+    all_districts = []
+    if _norm(state) == _norm("Karnataka"):
+        all_districts = [
+            {"district": name, "applications_enrolled": vals[0], "area_insured_lakh_ha": vals[1],
+             "sum_insured_crore": vals[2], "farmers_premium_crore": vals[3],
+             "paid_claims_crore": vals[4], "farmers_benefitted": vals[5]}
+            for name, vals in PMFBY_KARNATAKA_DISTRICT.items()
+        ]
+    if not state_row and not district_data:
+        return result(
+            "PMFBY/RWBCIS agriculture crop-insurance coverage and claims", "no_matching_records",
+            {"state": state, "district": district, "financial_year_selector": fy,
+             "district_record": None, "state_summary": None,
+             "data_level": "unavailable for selected state in this linked official snapshot",
+             "reference_period": "2020-21 to 2024-25", "source_as_of": "2025-10-31",
+             "state_comparison_sum_insured": comparisons, "state_comparison_claims_paid": claims_comparison,
+             "district_records": []},
+            note="The linked official parliamentary snapshot does not contain a numeric insurance record for this selected state. No values are inferred; the source can be opened to verify the reported coverage limits.",
+            updated="2025-12-16",
+            url="https://sansad.in/getFile/loksabhaquestions/annex/186/AS121_xU9ufj.pdf?source=pqals"
+        )
+    if state_row is None and district_data:
+        state_row = {"state": state, "applications_insured_lakh": None, "area_insured_lakh_ha": None,
+                     "sum_insured_crore": None, "farmers_premium_crore": None,
+                     "paid_claims_crore": None, "farmers_claims_paid_lakh": None}
+    data_level = "district" if district_data else "state/UT aggregate"
+    note_scope = ("District row matched in the official Karnataka annexure." if district_data else
+                  "Only a state/UT aggregate is published for this selected geography in the linked source; no district-level amount is inferred.")
+    if state == "West Bengal" and state_row.get("applications_insured_lakh") == 0.0:
+        note_scope += " The source reports 0.0 lakh applications insured and dashes for the other metrics; dashes are preserved as not reported, not converted to zero."
+    return result(
+        "PMFBY/RWBCIS agriculture crop-insurance coverage and claims", "available",
+        {"state": state, "district": district, "data_level": data_level,
+         "reference_period": "2020-21 to 2024-25", "source_as_of": "2025-10-31",
+         "state_summary": state_row, "district_record": district_data,
+         "state_comparison_sum_insured": comparisons, "state_comparison_claims_paid": claims_comparison,
+         "district_records": all_districts,
+         "numeric_precision": "State values as printed to one decimal in the parliamentary annexure; Karnataka district values as printed to two decimals in ₹ crore."},
+        updated="2025-12-16",
+        note="Source: Government of India, Lok Sabha Starred Question 121 answered 9 December 2025; PMFBY/RWBCIS applications insured, area insured, sum insured, farmers' premium and claims-paid totals for 2020-21 to 2024-25, as on 31 October 2025. State-level summary is supplied where the annexure lists it. District-wise rows in the linked official annexure are available for Karnataka; other selected districts fall back to their state's reported aggregate where present. This is a five-year cumulative snapshot, not the selected FY alone. A dash in the source means not reported.",
+        url="https://sansad.in/getFile/loksabhaquestions/annex/186/AS121_xU9ufj.pdf?source=pqals"
+    )
+
 
 @app.get("/api/source/{name}")
 def dashboard_source(name: str, state: str, district: str, fy: str):

@@ -1163,6 +1163,7 @@ def official_agricultural_insurance(state: str, district: str, fy: str):
              "paid_claims_crore": vals[4], "farmers_benefitted": vals[5]}
             for name, vals in PMFBY_KARNATAKA_DISTRICT.items()
         ]
+        all_districts.sort(key=lambda row: row["sum_insured_crore"], reverse=True)
     if not state_row and not district_data:
         return result(
             "PMFBY/RWBCIS agriculture crop-insurance coverage and claims", "no_matching_records",
@@ -1204,7 +1205,7 @@ def dashboard_source(name: str, state: str, district: str, fy: str, commodity: s
     """Return one independent dashboard source so the browser can render panels as they finish."""
     def insurance_source():
         # Use only the explicitly verified PMFBY reference, never a free-text filtered OGD dataset.
-        return official_insurance_reference(state,district,fy)
+        return official_agricultural_insurance(state,district,fy)
     jobs = {
         "climate": lambda: open_meteo_climate(state,district,fy),
         "agriculture": lambda: ceda_agri_market(state,district,fy,commodity),
@@ -1239,7 +1240,7 @@ def dashboard(state: str, district: str, fy: str, commodity: str = "Wheat"):
 
         def insurance_source():
             # Use only the explicitly verified PMFBY reference, never a free-text filtered OGD dataset.
-            return official_insurance_reference(state,district,fy)
+            return official_agricultural_insurance(state,district,fy)
 
         jobs = [
             ("climate", lambda: open_meteo_climate(state,district,fy), "Open-Meteo historical weather"),

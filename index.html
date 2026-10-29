@@ -145,8 +145,27 @@ function sourceBlock(s){
   special='<div class="data-qualification">Weather values are gridded/representative estimates for agricultural risk context, not official district-averaged agriculture statistics.</div>';
  } else if(src.includes("nowcast")&&Object.keys(d).length){
   const rows=d.records||d.warnings||[];
-  if(rows.length)cards=rows.slice(0,5).map(x=>{const title=x.title||x.district||x.District||"Weather advisory",desc=x.description||x.warning||x.message||x.text||"",t=(title+" "+desc).toLowerCase(),ico=/thunder|lightning|storm/.test(t)?"⛈️":/rain|shower/.test(t)?"🌧️":/cloud|overcast/.test(t)?"☁️":/heat|hot|temperature/.test(t)?"🌡️":/wind|gust/.test(t)?"💨":"🌦️";return '<div class="alert-item"><div class="alert-title">'+ico+' '+esc(title)+'</div><div>'+esc(desc||"Open the official IMD district warning map for details.")+'</div>'+(x.published?'<div class="hint">Published: '+esc(x.published)+'</div>':'')+'</div>';}).join("");
-  else cards='<div class="empty-panel"><div class="empty-icon">⚠️</div><div><strong>No confirmed district match in feed</strong><p>This is not evidence that no warning exists. Verify the selected district on the linked official IMD map.</p></div></div>';
+  const warningNames={1:"No warning",2:"Heavy rain",3:"Heavy snow",4:"Thunderstorm, lightning or squall",5:"Hailstorm",6:"Dust storm",7:"Dust-raising winds",8:"Strong surface winds",9:"Heat wave",10:"Hot day",11:"Warm night",12:"Cold wave",13:"Cold day",14:"Ground frost",15:"Fog",16:"Very heavy rain",17:"Extremely heavy rain"};
+  if(rows.length)cards=rows.slice(0,5).map(x=>{
+   const title=x.title||x.district||x.District||"IMD district advisory";
+   const hasDays=["Day_1","Day_2","Day_3","Day_4","Day_5","day_1","day_2","day_3","day_4","day_5"].some(k=>x[k]!==undefined&&x[k]!==null&&x[k]!=="");
+   let desc=x.description||x.warning||x.message||x.text||"";
+   if(hasDays){
+    const days=[1,2,3,4,5].map(i=>{
+     const code=x["Day_"+i]??x["day_"+i]??x["Day"+i]??x["day"+i];
+     if(code===undefined||code===null||code==="")return "";
+     const parts=String(code).split(/[;,]/).map(v=>v.trim()).filter(Boolean);
+     const labels=parts.map(v=>warningNames[Number(v)]||("Warning code "+v));
+     const color=x["Day"+i+"_Color"]??x["day"+i+"_color"];
+     const datePart=x.Date||x.date||"";
+     return '<div class="hint"><strong>Day '+i+(datePart?" · "+esc(datePart):"")+'</strong>: '+esc(labels.join(", "))+(color!==undefined&&color!==null?" · colour code "+esc(color):"")+'</div>';
+    }).filter(Boolean).join("");
+    desc=days||desc||"No day-coded warning values were returned.";
+   }
+   const t=(title+" "+desc).toLowerCase(),ico=/thunder|lightning|storm/.test(t)?"⛈️":/rain|shower/.test(t)?"🌧️":/cloud|overcast/.test(t)?"☁️":/heat|hot|temperature/.test(t)?"🌡️":/wind|gust/.test(t)?"💨":"🌦️";
+   return '<div class="alert-item"><div class="alert-title">'+ico+' '+esc(title)+'</div><div>'+desc+'</div>'+(x.published||x.Date||x.date?'<div class="hint">Issued: '+esc(x.published||x.Date||x.date)+'</div>':'')+'</div>';
+  }).join("");
+  else cards='<div class="empty-panel"><div class="empty-icon">⚠️</div><div><strong>No verified warning matched this selected district</strong><p>This is not evidence that no warning exists. Other districts are intentionally hidden; verify the selected district on the official IMD map.</p></div></div>';
  } else if(src.includes("loan recovery / collection")){
   const records=d.records||[];
   if(records.length){
@@ -207,6 +226,23 @@ function lineChart(items,labelKey,valueKey,suffix){
  const labels=points.map((p,i)=>i%stride===0||i===points.length-1?'<text x="'+p.x+'" y="'+(H-30)+'" font-size="10" fill="#43554d" text-anchor="end" transform="rotate(-25 '+p.x+' '+(H-30)+')">'+esc(p.label.slice(0,10))+'</text>':"").join("");
  return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Line chart of '+esc(valueKey)+' over '+esc(labelKey)+'">'+grid+'<path d="'+path+'" fill="none" stroke="#176b4d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>'+marks+labels+'</svg>';
 }
+function pieChart(items,labelKey,valueKey){
+ const data=(items||[]).filter(x=>x&&x[valueKey]!==null&&x[valueKey]!==undefined&&x[valueKey]!==""&&Number.isFinite(Number(x[valueKey]))&&Number(x[valueKey])>0);
+ if(!data.length)return '<div class="empty">No comparable reported values are available for a pie chart.</div>';
+ const total=data.reduce((a,x)=>a+Number(x[valueKey]),0),cx=82,cy=82,r=65;
+ const colors=["#176b4d","#67a987","#e5b44d","#668ac2","#b66d55","#8d79b7","#6b8585","#9da99f","#477c68","#c79051"];
+ let angle=-Math.PI/2;
+ const sectors=data.map((x,i)=>{
+  const value=Number(x[valueKey]),next=angle+value/total*Math.PI*2;
+  const x1=cx+r*Math.cos(angle),y1=cy+r*Math.sin(angle),x2=cx+r*Math.cos(next),y2=cy+r*Math.sin(next);
+  const large=(next-angle)>Math.PI?1:0;
+  const path="M "+cx+" "+cy+" L "+x1.toFixed(3)+" "+y1.toFixed(3)+" A "+r+" "+r+" 0 "+large+" 1 "+x2.toFixed(3)+" "+y2.toFixed(3)+" Z";
+  angle=next;
+  return '<path d="'+path+'" fill="'+colors[i%colors.length]+'" stroke="#fff" stroke-width="1.5"><title>'+esc(String(x[labelKey]))+": "+value.toLocaleString("en-IN",{maximumFractionDigits:2})+'</title></path>';
+ }).join("");
+ const legend=data.map((x,i)=>'<div><span class="legend-dot" style="background:'+colors[i%colors.length]+'"></span>'+esc(String(x[labelKey]))+' — '+(Number(x[valueKey])/total*100).toFixed(1)+'%</div>').join("");
+ return '<div class="donut-wrap"><svg viewBox="0 0 164 164" style="width:164px;max-width:48%" role="img" aria-label="Pie chart showing share of '+esc(valueKey)+'">'+sectors+'</svg><div class="donut-legend">'+legend+'</div></div>';
+}
 function donutChart(items,labelKey,valueKey){const data=(items||[]).filter(x=>x&&Number(x[valueKey])>0);if(!data.length)return '<div class="empty">No comparable values reported.</div>';const total=data.reduce((a,x)=>a+Number(x[valueKey]),0),colors=["#176b4d","#67a987","#e5b44d","#668ac2","#b66d55","#8d79b7","#6b8585","#9da99f"];let offset=0;const circles=data.map((x,i)=>{const pct=Number(x[valueKey])/total*100,el='<circle cx="70" cy="70" r="48" fill="none" stroke="'+colors[i%colors.length]+'" stroke-width="22" stroke-dasharray="'+(pct*3.016)+' '+(301.6-pct*3.016)+'" stroke-dashoffset="'+(-offset*3.016)+'" transform="rotate(-90 70 70)"></circle>';offset+=pct;return el;}).join("");const legend=data.map((x,i)=>'<div><span class="legend-dot" style="background:'+colors[i%colors.length]+'"></span>'+esc(String(x[labelKey]))+' — '+(Number(x[valueKey])/total*100).toFixed(1)+'%</div>').join("");return '<div class="donut-wrap"><svg viewBox="0 0 140 140" style="width:140px;max-width:45%" role="img" aria-label="Share of reported totals">'+circles+'<text x="70" y="67" text-anchor="middle" font-size="12" fill="#172b25">Total</text><text x="70" y="83" text-anchor="middle" font-size="11" fill="#172b25">'+esc(total.toLocaleString("en-IN",{maximumFractionDigits:0}))+'</text></svg><div class="donut-legend">'+legend+'</div></div>';}
 function plot(title,svg,note){return '<div class="plot"><h3>'+esc(title)+'</h3>'+svg+'<p class="plot-note">'+esc(note||"")+'</p></div>';}
 function emptyPanel(title,text){return '<div class="plot"><h3>'+esc(title)+'</h3><div class="empty">'+text+'</div></div>';}
@@ -221,7 +257,7 @@ panels.push(plot("Sum insured reported — PMFBY/RWBCIS, Kharif (All India)",sma
 const insuranceStates=ins.state_comparison_sum_insured||[];
 if(insuranceStates.length){
  panels.push(plot("Reported crop-insurance sum insured by state/UT",horizontalBars(insuranceStates.slice(0,10),"state","sum_insured_crore"," Cr"),"PMFBY/RWBCIS state aggregates across FY 2020–21 to FY 2024–25, as reported by the Ministry of Agriculture on 31 Oct 2025. These are not selected-district values."));
- panels.push(plot("Share of reported crop-insurance sum insured · top states",donutChart(insuranceStates.slice(0,8),"state","sum_insured_crore"),"Pie/donut shows only the eight largest state values in the linked published table, not an all-state total. State figures are five-year aggregate sums, not one-year premiums."));
+ panels.push(plot("Share of reported crop-insurance sum insured · top states",pieChart(insuranceStates.slice(0,8),"state","sum_insured_crore"),"Pie/donut shows only the eight largest state values in the linked published table, not an all-state total. State figures are five-year aggregate sums, not one-year premiums."));
 }
 if(ins.district_records&&ins.district_records.length){
  const districts=ins.district_records.slice(0,10);
@@ -231,7 +267,7 @@ if(ins.district_records&&ins.district_records.length){
 if(loans.dccb_state_comparison&&loans.dccb_state_comparison.length){
  panels.push(plot("Historical agricultural loan recovery rate · DCCBs (2017)",horizontalBars(loans.dccb_state_comparison.slice(0,10),"state","recovery_rate_percent","%"),"Government-reported DCCB recovery rates, as reported on 30 Jun 2017. Historical cooperative-bank data only, not current recovery performance."));
 }
-if(c.outstanding_by_bank_group&&c.outstanding_by_bank_group.length){panels.push(plot("Outstanding agricultural loans by bank group",horizontalBars(c.outstanding_by_bank_group,"bank_group","amount_crore"," Cr"),"Provisional state/UT balances as of 31 December 2025. A dash in the official table is treated as not reported, not zero."));panels.push(plot("Composition of reported agricultural loan balances",donutChart(c.outstanding_by_bank_group,"bank_group","amount_crore"),"Share only among numeric bank-group values published for this state/UT; missing figures are not treated as zero."));}
+if(c.outstanding_by_bank_group&&c.outstanding_by_bank_group.length){panels.push(plot("Outstanding agricultural loans by bank group",horizontalBars(c.outstanding_by_bank_group,"bank_group","amount_crore"," Cr"),"Provisional state/UT balances as of 31 December 2025. A dash in the official table is treated as not reported, not zero."));panels.push(plot("Composition of reported agricultural loan balances",pieChart(c.outstanding_by_bank_group,"bank_group","amount_crore"),"Share only among numeric bank-group values published for this state/UT; missing figures are not treated as zero."));}
 const stateCreditChart=c.all_states_disbursement||c.top_states_disbursement;if(stateCreditChart&&stateCreditChart.length)panels.push(plot("Agricultural credit disbursement by state/UT (FY 2024–25)",horizontalBars(stateCreditChart,"state","amount_crore"," Cr"),"Official Ministry of Finance answer citing NABARD/ENSURE bank submissions, ₹ crore. State/UT data, not district allocations."));
 if(inc.top_districts&&inc.top_districts.length)panels.push(plot("Agricultural-household income benchmark by district",horizontalBars(inc.top_districts,"district","monthly_income_rs"," ₹"),"Historical model benchmark for July 2018–June 2019. The study includes cultivation, livestock, wages and non-farm business; it is not farm-only revenue or current profit."));
 if(inc.selected_estimate)panels.push(plot("Selected farm-household income benchmark",smallBar([{period:"Monthly study estimate",value:inc.selected_estimate.monthly_income_rs},{period:"Annualised ×12",value:inc.selected_estimate.annualised_income_rs}],"period","value"),"Model estimate for July 2018–June 2019; annualised value is derived by multiplying the monthly figure by 12 and is not separately reported. The measure includes non-farm household earnings."));

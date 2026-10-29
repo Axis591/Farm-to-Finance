@@ -152,6 +152,128 @@ def open_meteo_climate(state, district, fy):
     return result("Open-Meteo historical weather","available" if rain or tx or tn else "unavailable",data,
                   updated=date.today().isoformat(),note=f"Historical observations available for {start} to {end} only. The selected financial year ends {fy_end}; future dates and the latest unpublished days are excluded. This is a gridded estimate for the geocoded location, not an official district aggregate or a formal climate-risk score.",url="https://open-meteo.com/")
 
+def _records(payload):
+    """Extract record arrays from common JSON response envelopes."""
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
+    if isinstance(payload, dict):
+        for key in ("data", "results", "records", "items", "commodities", "geographies", "states", "districts"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [x for x in value if isinstance(x, dict)]
+            if isinstance(value, dict):
+                nested = _records(value)
+                if nested:
+                    return nested
+    return []
+
+def _field(row, *keys):
+    for key in keys:
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+def ceda_agri_market(state: str, district: str, fy: str):
+    """Fetch market price context from CEDA's public Agri Market Data portal.
+    These are mandi prices, not crop-production totals or official district yields.
+    """
+    base = "https://agmarknet.ceda.ashoka.edu.in/api"
+    source = "CEDA Agri Market Data (AGMARKNET mandi prices)"
+    try:
+        commodities_r = HTTP.get(f"{base}/commodities", timeout=20)
+        commodities_r.raise_for_status()
+        commodities = _records(commodities_r.json())
+        if not commodities:
+            return result(source, "unavailable", note="CEDA responded, but its commodity list had an unrecognized format. No values were inferred.", url="https://agmarknet.ceda.ashoka.edu.in/")
+
+        # Wheat is a transparent default so the feed can be tested without adding
+        # another user input; it is clearly identified in the returned data/note.
+        commodity = next((x for x in commodities if str(_field(x, "name", "commodity", "cmdty", "commodity_name", "label") or "").strip().casefold() == "wheat"), None)
+        if not commodity:
+            return result(source, "unavailable", note="CEDA's commodity list did not include a recognizable Wheat entry. No market-price value was inferred.", url="https://agmarknet.ceda.ashoka.edu.in/")
+
+        geographies_r = HTTP.get(f"{base}/geographies", timeout=20)
+        geographies_r.raise_for_status()
+        geography_payload = geographies_r.json()
+        geographies = _records(geography_payload)
+        if not geographies:
+            # Some portal versions expose state and district lookups separately.
+            states_r = HTTP.get(f"{base}/states", timeout=20)
+            states_r.raise_for_status()
+            geographies = _records(states_r.json())
+
+        state_norm = state.strip().casefold()
+        state_row = next((x for x in geographies if str(_field(x, "state", "state_name", "name", "label") or "").strip().casefold() == state_norm), None)
+        state_id = _field(state_row or {}, "state_id", "id", "stateId", "value")
+        district_row = None
+
+        # If geography data is hierarchical, search children. Otherwise try the
+        # documented-style district lookup with the resolved state identifier.
+        if state_row:
+            children = _records(state_row)
+            district_norm = district.strip().casefold()
+            district_row = next((x for x in children if str(_field(x, "district", "district_name", "name", "label") or "").strip().casefold() == district_norm), None)
+        if state_id is not None and district_row is None:
+            for path in (f"{base}/districts?state_id={state_id}", f"{base}/districts?state={state_id}"):
+                try:
+                    dr = HTTP.get(path, timeout=20)
+                    dr.raise_for_status()
+                    rows = _records(dr.json())
+                    district_row = next((x for x in rows if str(_field(x, "district", "district_name", "name", "label") or "").strip().casefold() == district.strip().casefold()), None)
+                    if district_row:
+                        break
+                except requests.exceptions.RequestException:
+                    continue
+        district_id = _field(district_row or {}, "district_id", "id", "districtId", "value")
+        if state_id is None or district_id is None:
+            return result(source, "unavailable", note="CEDA market data is reachable, but the selected state/district could not be mapped confidently to its geographic IDs. No other district was substituted.", url="https://agmarknet.ceda.ashoka.edu.in/")
+
+        today = date.today()
+        start = (today - timedelta(days=365)).isoformat()
+        end = today.isoformat()
+        payload = {
+            "state_id": state_id,
+            "district_id": district_id,
+            "commodity_id": _field(commodity, "commodity_id", "id", "commodityId", "value"),
+            "calculation_type": "d",
+            "start_date": start,
+            "end_date": end,
+        }
+        prices_r = HTTP.post(f"{base}/prices", json=payload, timeout=30)
+        prices_r.raise_for_status()
+        price_rows = _records(prices_r.json())
+        normalized = []
+        for row in price_rows:
+            normalized.append({
+                "commodity": _field(row, "cmdty", "commodity", "commodity_name") or "Wheat",
+                "date": _field(row, "t", "date", "arrival_date"),
+                "minimum_price_rs_per_quintal": _field(row, "p_min", "min_price", "minimum_price"),
+                "maximum_price_rs_per_quintal": _field(row, "p_max", "max_price", "maximum_price"),
+                "modal_price_rs_per_quintal": _field(row, "p_modal", "modal_price", "price"),
+            })
+        normalized = [x for x in normalized if any(x[k] is not None for k in ("minimum_price_rs_per_quintal", "maximum_price_rs_per_quintal", "modal_price_rs_per_quintal"))]
+        normalized.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
+        latest = normalized[0] if normalized else None
+        return result(
+            source, "available" if latest else "no_matching_records",
+            {"commodity": "Wheat", "state": state, "district": district, "latest_available_record": latest, "recent_records": normalized[:12],
+             "price_unit": "INR per quintal", "requested_period_start": start, "requested_period_end": end},
+            updated=(latest.get("date") if latest else None),
+            note="CEDA Agri Market Data, sourced from AGMARKNET. This panel currently uses Wheat as a default test commodity and shows the latest record returned for the selected district; it reports mandi prices, not crop area or production. Data may lag; verify the record date before decisions. Credit: Centre for Economic Data & Analysis (CEDA), Ashoka University.",
+            url="https://agmarknet.ceda.ashoka.edu.in/",
+        )
+    except requests.exceptions.HTTPError as e:
+        code = e.response.status_code if e.response is not None else "unknown"
+        logging.exception("CEDA Agri Market HTTP error")
+        return result(source, "error", note=f"CEDA's market-data service returned HTTP {code}. Try again later; no substitute values were generated.", url="https://agmarknet.ceda.ashoka.edu.in/")
+    except requests.exceptions.Timeout:
+        logging.exception("CEDA Agri Market request timed out")
+        return result(source, "error", note="CEDA market-data request timed out. Try again later; no substitute values were generated.", url="https://agmarknet.ceda.ashoka.edu.in/")
+    except (requests.exceptions.RequestException, ValueError, TypeError) as e:
+        logging.exception("CEDA Agri Market fetch failed")
+        return result(source, "error", note=f"Could not read CEDA market data ({type(e).__name__}). The dashboard will not invent agriculture values.", url="https://agmarknet.ceda.ashoka.edu.in/")
+
 def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: str):
     key=os.getenv("DATA_GOV_IN_API_KEY","").strip()
     resource_id=(resource_id or "").strip()
@@ -234,7 +356,7 @@ def dashboard(state: str, district: str, fy: str):
         except Exception as e:
             logging.exception("Climate fetch failed")
             sources["climate"]=result("Open-Meteo historical weather","error",note=f"Provider request failed: {type(e).__name__}.")
-        sources["agriculture"]=ogd_resource(os.getenv("OGD_AGRICULTURE_RESOURCE_ID",""),state,district,fy,"Agriculture / crop statistics (OGD)")
+        sources["agriculture"]=ceda_agri_market(state,district,fy)
         sources["finance"]=ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
         sources["insurance"]=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
         # IMD district warnings are current context, not historical FY data.
@@ -285,7 +407,7 @@ def dashboard(state: str, district: str, fy: str):
                 url="https://api.imd.gov.in/public/api_reference.html")
 
         return {"selection":{"state":state,"district":district,"fy":fy},"generated_at":date.today().isoformat(),"sources":sources,
-          "disclaimer":"No configured OGD resources means agriculture and finance figures are unavailable, not zero. Climate data is a location-based gridded estimate, not a certified district statistic. Do not treat modelled indicators as official financial or climate-risk ratings."}
+          "disclaimer":"Agriculture now uses CEDA Agri Market Data (AGMARKNET) for mandi prices, with Wheat as the current default test commodity; these are not crop-production totals. Finance and insurance remain separate OGD feeds. Climate data is a location-based gridded estimate, not a certified district statistic. Do not treat modelled indicators as official financial or climate-risk ratings."}
     return cached(key,load)
 
 @app.get("/api/config")

@@ -152,12 +152,15 @@ def open_meteo_climate(state, district, fy):
     return result("Open-Meteo historical weather","available" if rain or tx or tn else "unavailable",data,
                   updated=date.today().isoformat(),note=f"Historical observations available for {start} to {end} only. The selected financial year ends {fy_end}; future dates and the latest unpublished days are excluded. This is a gridded estimate for the geocoded location, not an official district aggregate or a formal climate-risk score.",url="https://open-meteo.com/")
 
+def _norm(value):
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+
 def _records(payload):
-    """Extract record arrays from common JSON response envelopes."""
+    """Extract record arrays from common API response envelopes."""
     if isinstance(payload, list):
         return [x for x in payload if isinstance(x, dict)]
     if isinstance(payload, dict):
-        for key in ("data", "results", "records", "items", "commodities", "geographies", "states", "districts"):
+        for key in ("data", "results", "records", "items", "commodities", "geographies", "states", "districts", "result"):
             value = payload.get(key)
             if isinstance(value, list):
                 return [x for x in value if isinstance(x, dict)]
@@ -165,114 +168,134 @@ def _records(payload):
                 nested = _records(value)
                 if nested:
                     return nested
+        if payload and all(isinstance(v, (dict, list)) for v in payload.values()):
+            rows = []
+            for name, value in payload.items():
+                if isinstance(value, dict):
+                    row = dict(value); row.setdefault("name", name); rows.append(row)
+                elif isinstance(value, list):
+                    rows.extend(dict(x, state_name=name) for x in value if isinstance(x, dict))
+            return rows
     return []
 
 def _field(row, *keys):
+    if not isinstance(row, dict): return None
+    normalized = {_norm(k): v for k, v in row.items()}
     for key in keys:
-        value = row.get(key)
-        if value not in (None, ""):
-            return value
+        value = normalized.get(_norm(key))
+        if value not in (None, ""): return value
     return None
 
-def ceda_agri_market(state: str, district: str, fy: str):
-    """Fetch market price context from CEDA's public Agri Market Data portal.
-    These are mandi prices, not crop-production totals or official district yields.
-    """
-    base = "https://agmarknet.ceda.ashoka.edu.in/api"
-    source = "CEDA Agri Market Data (AGMARKNET mandi prices)"
+def _ceda_api(path):
+    return "https://api.ceda.ashoka.edu.in/agmarknet/" + path.lstrip("/")
+
+def ceda_geographies():
+    def fetch():
+        response = HTTP.get(_ceda_api("geographies"), timeout=25)
+        response.raise_for_status()
+        payload = response.json()
+        if not _records(payload): raise ValueError("CEDA geography response had no recognizable rows")
+        return payload
+    return cached("ceda:geographies", fetch)
+
+def ceda_districts_for_state(state: str):
+    """Return CEDA geography suggestions rather than unrelated geocoder place names."""
     try:
-        commodities_r = HTTP.get(f"{base}/commodities", timeout=20)
-        commodities_r.raise_for_status()
-        commodities = _records(commodities_r.json())
+        rows = _records(ceda_geographies())
+        target = _norm(state); found = set()
+        for row in rows:
+            state_name = _field(row, "state", "state_name", "stateName", "parent_state", "parentState")
+            district_name = _field(row, "district", "district_name", "districtName")
+            if state_name and district_name and _norm(state_name) == target:
+                found.add(str(district_name).strip())
+            row_name = _field(row, "name", "label", "state", "state_name", "stateName")
+            if _norm(row_name) == target:
+                for child in _records(row):
+                    child_name = _field(child, "district", "district_name", "districtName", "name", "label")
+                    if child_name and _norm(child_name) != target: found.add(str(child_name).strip())
+        return sorted(found, key=str.casefold)
+    except Exception:
+        logging.exception("CEDA geography lookup failed")
+        return []
+
+def ceda_agri_market(state: str, district: str, fy: str):
+    """Fetch AGMARKNET mandi prices for the selected geography and financial-year window."""
+    source = "CEDA Agri Market Data (AGMARKNET mandi prices)"
+    source_url = "https://agmarknet.ceda.ashoka.edu.in/"
+    try:
+        start, fy_end = fy_dates(fy)
+        end = min(fy_end, date.today().isoformat())
+        if start > end:
+            return result(source, "unavailable", note="This financial year has no published dates yet. Select a past or current financial year.", url=source_url)
+        cr = HTTP.get(_ceda_api("commodities"), timeout=25); cr.raise_for_status()
+        commodities = _records(cr.json())
         if not commodities:
-            return result(source, "unavailable", note="CEDA responded, but its commodity list had an unrecognized format. No values were inferred.", url="https://agmarknet.ceda.ashoka.edu.in/")
-
-        # Wheat is a transparent default so the feed can be tested without adding
-        # another user input; it is clearly identified in the returned data/note.
-        commodity = next((x for x in commodities if str(_field(x, "name", "commodity", "cmdty", "commodity_name", "label") or "").strip().casefold() == "wheat"), None)
-        if not commodity:
-            return result(source, "unavailable", note="CEDA's commodity list did not include a recognizable Wheat entry. No market-price value was inferred.", url="https://agmarknet.ceda.ashoka.edu.in/")
-
-        geographies_r = HTTP.get(f"{base}/geographies", timeout=20)
-        geographies_r.raise_for_status()
-        geography_payload = geographies_r.json()
-        geographies = _records(geography_payload)
-        if not geographies:
-            # Some portal versions expose state and district lookups separately.
-            states_r = HTTP.get(f"{base}/states", timeout=20)
-            states_r.raise_for_status()
-            geographies = _records(states_r.json())
-
-        state_norm = state.strip().casefold()
-        state_row = next((x for x in geographies if str(_field(x, "state", "state_name", "name", "label") or "").strip().casefold() == state_norm), None)
-        state_id = _field(state_row or {}, "state_id", "id", "stateId", "value")
-        district_row = None
-
-        # If geography data is hierarchical, search children. Otherwise try the
-        # documented-style district lookup with the resolved state identifier.
-        if state_row:
-            children = _records(state_row)
-            district_norm = district.strip().casefold()
-            district_row = next((x for x in children if str(_field(x, "district", "district_name", "name", "label") or "").strip().casefold() == district_norm), None)
-        if state_id is not None and district_row is None:
-            for path in (f"{base}/districts?state_id={state_id}", f"{base}/districts?state={state_id}"):
-                try:
-                    dr = HTTP.get(path, timeout=20)
-                    dr.raise_for_status()
-                    rows = _records(dr.json())
-                    district_row = next((x for x in rows if str(_field(x, "district", "district_name", "name", "label") or "").strip().casefold() == district.strip().casefold()), None)
-                    if district_row:
-                        break
-                except requests.exceptions.RequestException:
-                    continue
-        district_id = _field(district_row or {}, "district_id", "id", "districtId", "value")
+            return result(source, "unavailable", note="CEDA documented API returned an unrecognized commodity list.", url=source_url)
+        commodity = next((x for x in commodities if _norm(_field(x, "name", "commodity", "cmdty", "commodity_name", "label", "commodityName")) == "wheat"), None)
+        if commodity is None:
+            commodity = next((x for x in commodities if "wheat" in _norm(" ".join(str(v) for v in x.values()))), None)
+        if commodity is None:
+            return result(source, "unavailable", note="CEDA API is responding, but Wheat was not found in its current commodity list. No substitute commodity or price was assumed.", url=source_url)
+        geo_rows = _records(ceda_geographies())
+        target_state, target_district = _norm(state), _norm(district)
+        state_id = district_id = None
+        for row in geo_rows:
+            row_state = _field(row, "state", "state_name", "stateName", "parent_state", "parentState")
+            row_district = _field(row, "district", "district_name", "districtName")
+            if row_state and _norm(row_state) == target_state:
+                state_id = state_id or _field(row, "state_id", "stateId", "state_code", "stateCode")
+                if row_district and _norm(row_district) == target_district:
+                    district_id = _field(row, "district_id", "districtId", "district_code", "districtCode", "id")
+            row_name = _field(row, "name", "label", "state", "state_name", "stateName")
+            if _norm(row_name) == target_state:
+                state_id = state_id or _field(row, "state_id", "stateId", "state_code", "stateCode", "id", "value")
+                for child in _records(row):
+                    child_name = _field(child, "district", "district_name", "districtName", "name", "label")
+                    if _norm(child_name) == target_district:
+                        district_id = _field(child, "district_id", "districtId", "district_code", "districtCode", "id", "value")
+        commodity_id = _field(commodity, "commodity_id", "commodityId", "id", "value", "commodity_code", "commodityCode")
+        if commodity_id is None:
+            return result(source, "unavailable", note="CEDA listed Wheat but did not expose a recognized commodity identifier.", url=source_url)
         if state_id is None or district_id is None:
-            return result(source, "unavailable", note="CEDA market data is reachable, but the selected state/district could not be mapped confidently to its geographic IDs. No other district was substituted.", url="https://agmarknet.ceda.ashoka.edu.in/")
-
-        today = date.today()
-        start = (today - timedelta(days=365)).isoformat()
-        end = today.isoformat()
-        payload = {
-            "state_id": state_id,
-            "district_id": district_id,
-            "commodity_id": _field(commodity, "commodity_id", "id", "commodityId", "value"),
-            "calculation_type": "d",
-            "start_date": start,
-            "end_date": end,
-        }
-        prices_r = HTTP.post(f"{base}/prices", json=payload, timeout=30)
-        prices_r.raise_for_status()
-        price_rows = _records(prices_r.json())
+            return result(source, "unavailable", note="CEDA geography data did not provide a confident ID match for " + district + ", " + state + ". No other district was substituted.", data={"requested_state":state,"requested_district":district,"district_suggestions":ceda_districts_for_state(state)[:100]}, url=source_url)
+        base = {"commodity_id":commodity_id, "calculation_type":"d", "start_date":start, "end_date":end}
+        variants = [dict(base, state_id=state_id, district_id=district_id), dict(base, state=state, district=district), dict(base, state_id=state_id, district=district)]
+        price_rows = []; last_error = None
+        for body in variants:
+            try:
+                pr = HTTP.post(_ceda_api("prices"), json=body, timeout=35)
+                if pr.status_code in (400, 422): last_error = "HTTP " + str(pr.status_code); continue
+                pr.raise_for_status(); price_rows = _records(pr.json())
+                if price_rows: break
+            except requests.exceptions.RequestException as exc:
+                last_error = type(exc).__name__
         normalized = []
         for row in price_rows:
-            normalized.append({
-                "commodity": _field(row, "cmdty", "commodity", "commodity_name") or "Wheat",
-                "date": _field(row, "t", "date", "arrival_date"),
-                "minimum_price_rs_per_quintal": _field(row, "p_min", "min_price", "minimum_price"),
-                "maximum_price_rs_per_quintal": _field(row, "p_max", "max_price", "maximum_price"),
-                "modal_price_rs_per_quintal": _field(row, "p_modal", "modal_price", "price"),
-            })
-        normalized = [x for x in normalized if any(x[k] is not None for k in ("minimum_price_rs_per_quintal", "maximum_price_rs_per_quintal", "modal_price_rs_per_quintal"))]
+            item = {"commodity":_field(row, "cmdty", "commodity", "commodity_name", "commodityName") or "Wheat",
+                    "date":_field(row, "t", "date", "arrival_date", "month", "period"),
+                    "minimum_price_rs_per_quintal":_field(row, "p_min", "min_price", "minimum_price", "minPrice"),
+                    "maximum_price_rs_per_quintal":_field(row, "p_max", "max_price", "maximum_price", "maxPrice"),
+                    "modal_price_rs_per_quintal":_field(row, "p_modal", "modal_price", "price", "modalPrice")}
+            if any(item[k] is not None for k in ("minimum_price_rs_per_quintal", "maximum_price_rs_per_quintal", "modal_price_rs_per_quintal")): normalized.append(item)
         normalized.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
         latest = normalized[0] if normalized else None
-        return result(
-            source, "available" if latest else "no_matching_records",
-            {"commodity": "Wheat", "state": state, "district": district, "latest_available_record": latest, "recent_records": normalized[:12],
-             "price_unit": "INR per quintal", "requested_period_start": start, "requested_period_end": end},
-            updated=(latest.get("date") if latest else None),
-            note="CEDA Agri Market Data, sourced from AGMARKNET. This panel currently uses Wheat as a default test commodity and shows the latest record returned for the selected district; it reports mandi prices, not crop area or production. Data may lag; verify the record date before decisions. Credit: Centre for Economic Data & Analysis (CEDA), Ashoka University.",
-            url="https://agmarknet.ceda.ashoka.edu.in/",
-        )
+        if not latest and last_error:
+            return result(source, "unavailable", note="CEDA API connected but did not return a usable price series for this district/FY (" + last_error + "). No values were fabricated.", url=source_url)
+        return result(source, "available" if latest else "no_matching_records",
+                      {"commodity":"Wheat","state":state,"district":district,"financial_year":fy,"latest_available_record":latest,
+                       "recent_records":normalized[:12],"price_unit":"INR per quintal","requested_period_start":start,"requested_period_end":end},
+                      updated=(latest.get("date") if latest else None),
+                      note="CEDA Agri Market Data sourced from AGMARKNET. Default commodity: Wheat. Selected FY window: " + start + " to " + end + ". These are mandi prices, not crop area or production. Data may lag. Credit: Centre for Economic Data & Analysis (CEDA), Ashoka University.", url=source_url)
     except requests.exceptions.HTTPError as e:
         code = e.response.status_code if e.response is not None else "unknown"
-        logging.exception("CEDA Agri Market HTTP error")
-        return result(source, "error", note=f"CEDA's market-data service returned HTTP {code}. Try again later; no substitute values were generated.", url="https://agmarknet.ceda.ashoka.edu.in/")
+        logging.exception("CEDA API HTTP error")
+        return result(source, "error", note="CEDA documented API returned HTTP " + str(code) + ". Try again later; no substitute values were generated.", url=source_url)
     except requests.exceptions.Timeout:
-        logging.exception("CEDA Agri Market request timed out")
-        return result(source, "error", note="CEDA market-data request timed out. Try again later; no substitute values were generated.", url="https://agmarknet.ceda.ashoka.edu.in/")
+        logging.exception("CEDA API timed out")
+        return result(source, "error", note="CEDA API timed out. Try again later; no substitute values were generated.", url=source_url)
     except (requests.exceptions.RequestException, ValueError, TypeError) as e:
-        logging.exception("CEDA Agri Market fetch failed")
-        return result(source, "error", note=f"Could not read CEDA market data ({type(e).__name__}). The dashboard will not invent agriculture values.", url="https://agmarknet.ceda.ashoka.edu.in/")
+        logging.exception("CEDA API fetch failed")
+        return result(source, "error", note="Could not read CEDA API data (" + type(e).__name__ + "). No substitute values were generated.", url=source_url)
 
 def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: str):
     key=os.getenv("DATA_GOV_IN_API_KEY","").strip()
@@ -332,19 +355,11 @@ def states():
 
 @app.get("/api/districts")
 def districts(state: str = Query(..., min_length=2)):
-    # Use geocoding as a discovery source, not as an authoritative district register.
-    # Return likely India locations in the selected state; UI also allows manual district entry.
-    try:
-        r=HTTP.get("https://geocoding-api.open-meteo.com/v1/search",params={"name":state,"count":100,"language":"en","format":"json"},timeout=15)
-        r.raise_for_status()
-        found=[]
-        for x in r.json().get("results",[]):
-            if x.get("country_code")=="IN":
-                n=x.get("name")
-                if n and n not in found: found.append(n)
-        return {"districts":sorted(found),"source":"Open-Meteo geocoding suggestions","note":"Suggestions only; this is not an authoritative district list. Type the district if it is missing."}
-    except Exception:
-        return {"districts":[],"source":"unavailable","note":"District suggestions unavailable; type the district name."}
+    # Use CEDA's own geography register instead of unrelated geocoder place names.
+    found = ceda_districts_for_state(state)
+    if found:
+        return {"districts":found,"source":"CEDA Agri Market Data geography register","note":"Suggestions from CEDA's market-data register; administrative coverage can differ. You may type a district if it is missing."}
+    return {"districts":[],"source":"unavailable","note":"CEDA district suggestions are temporarily unavailable; type the district name and refresh."}
 
 @app.get("/api/dashboard")
 def dashboard(state: str, district: str, fy: str):
@@ -407,7 +422,7 @@ def dashboard(state: str, district: str, fy: str):
                 url="https://api.imd.gov.in/public/api_reference.html")
 
         return {"selection":{"state":state,"district":district,"fy":fy},"generated_at":date.today().isoformat(),"sources":sources,
-          "disclaimer":"Agriculture now uses CEDA Agri Market Data (AGMARKNET) for mandi prices, with Wheat as the current default test commodity; these are not crop-production totals. Finance and insurance remain separate OGD feeds. Climate data is a location-based gridded estimate, not a certified district statistic. Do not treat modelled indicators as official financial or climate-risk ratings."}
+          "disclaimer":"Agriculture uses CEDA documented Agri Market Data API for AGMARKNET mandi prices (Wheat default), filtered to the selected financial-year date window where available; these are not crop-production totals. Public finance and insurance feeds require valid dataset-specific OGD resource UUIDs and remain unavailable until configured. Climate data is a location-based gridded estimate, not a certified district statistic. Do not treat modelled indicators as official financial or climate-risk ratings."}
     return cached(key,load)
 
 @app.get("/api/config")

@@ -280,9 +280,26 @@ def _ceda_find_district(state, district):
             logging.exception("CEDA district ID lookup failed for state ID %s", state_id)
     return None, None, None
 
-def ceda_agri_market(state: str, district: str, fy: str):
+def ceda_agri_market(state: str, district: str, fy: str, commodity: str = "Wheat"):
     """Fetch real CEDA/AGMARKNET market prices for one state, district and financial year."""
-    source = "CEDA Agri Market Data (AGMARKNET mandi prices)"
+    commodity_name = (commodity or "Wheat").strip()
+    commodity_aliases = {
+        "wheat": ["wheat"],
+        "rice": ["rice", "paddy", "dhan"],
+        "maize": ["maize", "corn", "makka"],
+        "cotton": ["cotton", "kapas"],
+        "onion": ["onion"],
+        "potato": ["potato"],
+        "tomato": ["tomato"],
+        "soybean": ["soybean", "soyabean", "soya bean"],
+        "groundnut": ["groundnut", "peanut"],
+        "mustard": ["mustard", "rapeseed"],
+    }
+    aliases = commodity_aliases.get(_norm(commodity_name))
+    if not aliases:
+        return result("CEDA Agri Market Data (AGMARKNET mandi prices)", "unavailable",
+                      note="This commodity is not enabled in the dashboard's verified commodity list. No price was substituted.", url="https://agmarknet.ceda.ashoka.edu.in/")
+    source = f"CEDA Agri Market Data (AGMARKNET mandi prices: {commodity_name})"
     source_url = "https://agmarknet.ceda.ashoka.edu.in/"
     try:
         state_ids = _ceda_state_ids(state)
@@ -306,17 +323,17 @@ def ceda_agri_market(state: str, district: str, fy: str):
             resolved_district = f"{state} state aggregate (district '{district}' not matched)"
 
         commodities = _items(cached("ceda:commodities", lambda: _ceda_request("commodities")))
+        alias_norms = {_norm(x) for x in aliases}
         commodity_row = next((row for row in commodities
-                              if _norm(_row_name(row, ("commodity", "commodity_name", "commodityName", "name", "label", "cmdty"))) == "wheat"), None)
+                              if _norm(_row_name(row, ("commodity", "commodity_name", "commodityName", "name", "label", "cmdty"))) in alias_norms), None)
         if commodity_row is None:
-            commodity_row = next((row for row in commodities
-                                  if "wheat" in _norm(str(row))), None)
+            commodity_row = next((row for row in commodities if _norm(str(row)) in alias_norms), None)
         if commodity_row is None:
-            return result(source, "unavailable", note="CEDA's commodity API did not return a recognizable Wheat entry. No price was invented.", url=source_url)
+            return result(source, "unavailable", note=f"CEDA's commodity API did not return a recognizable {commodity_name} entry. No price was invented.", url=source_url)
         commodity_id = commodity_row if isinstance(commodity_row, (int, float)) else _field(
             commodity_row, "commodity_id", "commodityId", "id", "value", "commodity_code", "commodityCode")
         if commodity_id is None:
-            return result(source, "unavailable", note="CEDA returned Wheat without a recognizable commodity ID. No price was inferred.", url=source_url)
+            return result(source, "unavailable", note="CEDA returned the selected commodity without a recognizable commodity ID. No price was inferred.", url=source_url)
 
         # Monthly aggregation keeps the FY response compact and makes past FY selection meaningful.
         body = {
@@ -348,7 +365,7 @@ def ceda_agri_market(state: str, district: str, fy: str):
                 continue
             record = {
                 "date": observed.isoformat(),
-                "commodity": _field(row, "cmdty", "commodity", "commodity_name") or "Wheat",
+                "commodity": _field(row, "cmdty", "commodity", "commodity_name") or commodity_name,
                 "state": state,
                 "district": resolved_district,
                 "minimum_price_rs_per_quintal": _field(row, "p_min", "min_price", "minimum_price"),
@@ -360,16 +377,16 @@ def ceda_agri_market(state: str, district: str, fy: str):
         normalized.sort(key=lambda item: item["date"], reverse=True)
         latest = normalized[0] if normalized else None
         note = (
-            (f"CEDA/AGMARKNET monthly mandi-price series for Wheat, {resolved_district}, FY {fy}. "
+            (f"CEDA/AGMARKNET monthly mandi-price series for {commodity_name}, {resolved_district}, FY {fy}. "
              if district_level else f"CEDA/AGMARKNET state-level aggregate for {state}; district '{district}' could not be mapped confidently, so these records are NOT district-specific. FY {fy}. ")
             + f"Query window: {start} through {end}. This is market-price data, not crop production. "
             "CEDA values may be updated with a lag; the observation date is shown explicitly. "
             "Credit: Centre for Economic Data & Analysis (CEDA), Ashoka University."
         )
         if not latest:
-            note = f"CEDA returned no Wheat price records for {resolved_district}, {state}, FY {fy} ({start} to {end}). This is a genuine no-record result for this commodity/geography/period, not zero prices."
+            note = f"CEDA returned no {commodity_name} price records for {resolved_district}, {state}, FY {fy} ({start} to {end}). This is a genuine no-record result for this commodity/geography/period, not zero prices."
         return result(source, "available" if latest else "no_matching_records",
-                      {"commodity":"Wheat","state":state,"district":(resolved_district if district_level else district),
+                      {"commodity":commodity_name,"state":state,"district":(resolved_district if district_level else district),
                        "data_level":("district" if district_level else "state aggregate fallback"),
                        "financial_year":fy,"latest_available_record":latest,"recent_records":normalized[:12],
                        "records_returned":len(normalized),"price_unit":"INR per quintal",
@@ -1183,14 +1200,14 @@ def official_agricultural_insurance(state: str, district: str, fy: str):
 
 
 @app.get("/api/source/{name}")
-def dashboard_source(name: str, state: str, district: str, fy: str):
+def dashboard_source(name: str, state: str, district: str, fy: str, commodity: str = Query("Wheat", min_length=2, max_length=60)):
     """Return one independent dashboard source so the browser can render panels as they finish."""
     def insurance_source():
         # Use only the explicitly verified PMFBY reference, never a free-text filtered OGD dataset.
         return official_insurance_reference(state,district,fy)
     jobs = {
         "climate": lambda: open_meteo_climate(state,district,fy),
-        "agriculture": lambda: ceda_agri_market(state,district,fy),
+        "agriculture": lambda: ceda_agri_market(state,district,fy,commodity),
         "agri_credit": lambda: official_agriculture_credit(state,district,fy),
         "farm_income": lambda: agricultural_household_income(state,district,fy),
         "loan_recovery": lambda: official_loan_recovery_gap(state,district,fy),
@@ -1202,15 +1219,15 @@ def dashboard_source(name: str, state: str, district: str, fy: str):
     if name not in jobs:
         return result("Unknown dashboard source", "error", note="No source with that name is configured.")
     try:
-        return cached(f"source:{name}:{state}:{district}:{fy}", jobs[name])
+        return cached(f"source:{name}:{state}:{district}:{fy}:{commodity}", jobs[name])
     except Exception as e:
         logging.exception("Dashboard source %s failed", name)
         return result(name, "error", note=f"Source request failed: {type(e).__name__}. Other dashboard panels remain available.")
 
 
 @app.get("/api/dashboard")
-def dashboard(state: str, district: str, fy: str):
-    key=f"dash:{state}:{district}:{fy}"
+def dashboard(state: str, district: str, fy: str, commodity: str = "Wheat"):
+    key=f"dash:{state}:{district}:{fy}:{commodity}"
     def load():
         sources={}
         def safe_call(name, fn, source_name):
@@ -1226,7 +1243,7 @@ def dashboard(state: str, district: str, fy: str):
 
         jobs = [
             ("climate", lambda: open_meteo_climate(state,district,fy), "Open-Meteo historical weather"),
-            ("agriculture", lambda: ceda_agri_market(state,district,fy), "Agricultural market prices (AGMARKNET)"),
+            ("agriculture", lambda: ceda_agri_market(state,district,fy,commodity), "Agricultural market prices (AGMARKNET)"),
             ("agri_credit", lambda: official_agriculture_credit(state,district,fy), "Official agricultural credit"),
             ("farm_income", lambda: agricultural_household_income(state,district,fy), "Agricultural household income"),
             ("loan_recovery", lambda: official_loan_recovery_gap(state,district,fy), "Loan recovery"),

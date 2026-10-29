@@ -257,7 +257,12 @@ def ceda_districts_for_state(state: str):
     return sorted(names, key=str.casefold)
 
 def _ceda_find_district(state, district):
-    aliases = CEDA_DISTRICT_ALIASES.get(district.strip().casefold(), {district.strip().casefold()})
+    district_key = district.strip().casefold()
+    aliases = set(CEDA_DISTRICT_ALIASES.get(district_key, {district_key}))
+    for canonical, variants in CEDA_DISTRICT_ALIASES.items():
+        if district_key in variants:
+            aliases.add(canonical)
+            aliases.update(variants)
     alias_norms = {_norm(name) for name in aliases}
     for state_id in _ceda_state_ids(state):
         try:
@@ -288,12 +293,13 @@ def ceda_agri_market(state: str, district: str, fy: str):
             return result(source, "unavailable", note="CEDA historical mandi-price coverage used by this dashboard starts in FY 2014-15. Choose FY 2014-15 or later.", url=source_url)
 
         state_id, district_id, resolved_district = _ceda_find_district(state, district)
-        if district_id is None:
-            suggestions = ceda_districts_for_state(state)
-            return result(source, "unavailable",
-                          note=f"CEDA's district register did not match '{district}' in {state}. Select a listed district or check spelling; no other district was substituted.",
-                          data={"requested_state":state, "requested_district":district, "available_districts_sample":suggestions[:80]},
-                          url=source_url)
+        district_level = district_id is not None
+        if not district_level:
+            # CEDA accepts district_id=0 for state-level aggregation. This is explicitly
+            # labelled as state-level data, never presented as a district observation.
+            state_id = state_ids[0]
+            district_id = 0
+            resolved_district = f"{state} state aggregate (district '{district}' not matched)"
 
         commodities = _items(cached("ceda:commodities", lambda: _ceda_request("commodities")))
         commodity_row = next((row for row in commodities
@@ -350,16 +356,18 @@ def ceda_agri_market(state: str, district: str, fy: str):
         normalized.sort(key=lambda item: item["date"], reverse=True)
         latest = normalized[0] if normalized else None
         note = (
-            f"CEDA/AGMARKNET monthly mandi-price series for Wheat, {resolved_district}, {state}, FY {fy}. "
-            f"Query window: {start} through {end}. This is market-price data, not crop production. "
+            (f"CEDA/AGMARKNET monthly mandi-price series for Wheat, {resolved_district}, FY {fy}. "
+             if district_level else f"CEDA/AGMARKNET state-level aggregate for {state}; district '{district}' could not be mapped confidently, so these records are NOT district-specific. FY {fy}. ")
+            + f"Query window: {start} through {end}. This is market-price data, not crop production. "
             "CEDA values may be updated with a lag; the observation date is shown explicitly. "
             "Credit: Centre for Economic Data & Analysis (CEDA), Ashoka University."
         )
         if not latest:
             note = f"CEDA returned no Wheat price records for {resolved_district}, {state}, FY {fy} ({start} to {end}). This is a genuine no-record result for this commodity/geography/period, not zero prices."
         return result(source, "available" if latest else "no_matching_records",
-                      {"commodity":"Wheat","state":state,"district":resolved_district,"financial_year":fy,
-                       "latest_available_record":latest,"recent_records":normalized[:12],
+                      {"commodity":"Wheat","state":state,"district":(resolved_district if district_level else district),
+                       "data_level":("district" if district_level else "state aggregate fallback"),
+                       "financial_year":fy,"latest_available_record":latest,"recent_records":normalized[:12],
                        "records_returned":len(normalized),"price_unit":"INR per quintal",
                        "period_start":start,"period_end":end},
                       updated=(latest.get("date") if latest else None), note=note, url=source_url)
@@ -522,7 +530,7 @@ def dashboard(state: str, district: str, fy: str):
                 url="https://api.imd.gov.in/public/api_reference.html")
 
         return {"selection":{"state":state,"district":district,"fy":fy},"generated_at":date.today().isoformat(),"sources":sources,
-          "disclaimer":"Agriculture uses CEDA documented Agri Market Data API for AGMARKNET mandi prices (Wheat default), filtered to the selected financial-year date window where available; these are not crop-production totals. Public finance and insurance feeds require valid dataset-specific OGD resource UUIDs and remain unavailable until configured. Climate data is a location-based gridded estimate, not a certified district statistic. Do not treat modelled indicators as official financial or climate-risk ratings."}
+          "disclaimer":"Agriculture uses CEDA Agri Market Data (AGMARKNET) for the selected financial-year window; Wheat is the default commodity and the data are mandi prices, not crop-production totals. If a district cannot be mapped, the card explicitly labels any state-level fallback. Finance and crop insurance show official scheme references when verified district/FY datasets are not configured; they do not invent district payment, premium or claim amounts. Climate data is a location-based gridded estimate, not a certified district statistic."}
     return cached(key,load)
 
 @app.get("/api/config")

@@ -538,7 +538,7 @@ def official_agriculture_credit(state: str, district: str, fy: str):
         "state": state, "selected_district": district,
         "data_level": "State/UT aggregate; not district-specific",
         "disbursement_history": history, "top_states_disbursement": top,
-        "outstanding_by_bank_group": [x for x in groups if x["amount_crore"] is not None],
+        "outstanding_by_bank_group": groups,
         "outstanding_reported_sum_crore": sum(reported) if reported else None,
         "outstanding_total_is_complete": len(reported) == 3,
         "outstanding_as_of": "2025-12-31",
@@ -687,6 +687,35 @@ def agricultural_household_income(state: str, district: str, fy: str):
         return result("ISSRF district-level agricultural household income estimates (2018-19)", "error",
                       note=f"Could not parse the public income report ({type(e).__name__}).", url=AGRI_INCOME_SOURCE)
 
+
+def official_pmfby_national_summary():
+    """Official PMFBY administrative-dashboard snapshot. India-wide Kharif trend; not district-specific."""
+    # Source dashboard last-updated 28 September 2026. The 2026 Kharif claim series
+    # is incomplete and intentionally omitted. Premium/claim values are converted from lakh to crore.
+    years = ["2018","2019","2020","2021","2022","2023","2024","2025"]
+    farmers = [23256797,21578164,18906275,16845752,20058814,25268201,29629227,22976591]
+    gross_premium_lakh = [2117238,2387258,2068650,1892150,2005257,2034766,2077966,1415036]
+    claims_paid_lakh = [1987878,2208868,1446423,1502087,1324476,1641203,1134726,987259]
+    sum_insured_lakh = [13990538,14538353,11625528,10208166,12706726,16781176,18199735,14505586]
+    history = []
+    for i, year in enumerate(years):
+        history.append({
+            "kharif_year":year,
+            "farmers_covered":farmers[i],
+            "gross_premium_crore":round(gross_premium_lakh[i] / 100, 2),
+            "claims_paid_crore":round(claims_paid_lakh[i] / 100, 2),
+            "sum_insured_crore":round(sum_insured_lakh[i] / 100, 2),
+        })
+    latest = history[-1]
+    return result("PMFBY official administrative dashboard (All-India Kharif snapshot)", "available",
+                  {"scope":"All India; Kharif season; national aggregate, not state/district-specific",
+                   "history":history,"latest_completed_year":latest,
+                   "unit_note":"Financial amounts converted from published ₹ lakh to ₹ crore",
+                   "snapshot_last_updated":"2026-09-28"},
+                  updated="2026-09-28",
+                  note="Snapshot transcribed from the Ministry of Agriculture & Farmers Welfare PMFBY administrative dashboard as last updated 28 September 2026. The 2026 Kharif claims value is excluded because that period is incomplete. These are scheme-level insurance metrics, not agriculture business revenue or profit.",
+                  url="https://pmfby.gov.in/adminStatistics/dashboard")
+
 def official_loan_recovery_gap(state: str, district: str, fy: str):
     return result("Agricultural loan recovery / repayment", "not_available",
                   {"state":state,"district":district,"financial_year":fy,"recovered_amount_crore":None,"recovery_rate_percent":None},
@@ -709,6 +738,30 @@ def imd_public_warnings(state: str, district: str):
     # IMD's documented API has a district ID parameter and may deny unregistered clients.
     # The public RSS avoids inventing an Obj_id. Only return a district-specific warning
     # when the district can be matched in the item text.
+    # First try IMD's documented district-wise warning API without an ID; some deployments
+    # return the full list. If provider access is denied or the shape is not usable, try RSS.
+    api_url = "https://mausam.imd.gov.in/api/warnings_district_api.php"
+    try:
+        api_response = HTTP.get(api_url, timeout=20, headers={"Accept":"application/json"})
+        api_response.raise_for_status()
+        api_json = api_response.json()
+        api_rows = _items(api_json.get("data", api_json.get("records", api_json.get("warnings", api_json))) if isinstance(api_json, dict) else api_json)
+        api_matches = []
+        for row in api_rows:
+            if not isinstance(row, dict):
+                continue
+            row_district = _field(row, "District", "district", "district_name", "districtName", "DISTRICT")
+            row_state = _field(row, "State", "state", "state_name", "stateName", "STATE")
+            if _norm(row_district) == _norm(district) and (not row_state or _norm(row_state) == _norm(state)):
+                api_matches.append(row)
+        if api_matches:
+            return result(source, "available",
+                          {"state":state,"district":district,"feed":"IMD district wise warning API","records":api_matches[:10]},
+                          updated=date.today().isoformat(),
+                          note="Live district warning records returned by IMD's published district-wise warning API. Review validity/issue times in the records. This is current warning data, not a historical FY series.",
+                          url=api_url)
+    except Exception:
+        logging.info("IMD JSON warning API not available; trying public RSS")
     try:
         response = HTTP.get(IMD_DISTRICT_RSS, timeout=25, headers={"Accept":"application/rss+xml, application/xml, text/xml"})
         response.raise_for_status()
@@ -798,6 +851,7 @@ def dashboard(state: str, district: str, fy: str):
         sources["agri_credit"]=official_agriculture_credit(state,district,fy)
         sources["farm_income"]=agricultural_household_income(state,district,fy)
         sources["loan_recovery"]=official_loan_recovery_gap(state,district,fy)
+        sources["pmfby_national"] = official_pmfby_national_summary()
         finance = ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
         sources["finance"] = finance if finance.get("status") == "available" else official_finance_reference(state,district,fy)
         insurance = ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")

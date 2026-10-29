@@ -277,7 +277,11 @@ def ceda_agri_market(state: str, district: str, fy: str):
                 except ValueError:
                     try: parsed_date = datetime.strptime(str(date_value), "%d/%m/%Y").date()
                     except Exception: parsed_date = None
-            if parsed_date and not (date.fromisoformat(start) <= parsed_date <= date.fromisoformat(end)): continue
+            if parsed_date is None:
+                # Do not mix undated records into a financial-year-specific result.
+                continue
+            if not (date.fromisoformat(start) <= parsed_date <= date.fromisoformat(end)):
+                continue
             item = {"commodity":_field(row, "cmdty", "commodity", "commodity_name", "commodityName") or "Wheat",
                     "date":str(date_value) if date_value else None,
                     "minimum_price_rs_per_quintal":_field(row, "p_min", "min_price", "minimum_price", "minPrice"),

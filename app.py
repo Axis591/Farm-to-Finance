@@ -439,6 +439,26 @@ def districts(state: str = Query(..., min_length=2)):
         return {"districts":found,"source":"AGMARKNET state/district API","note":"Districts supplied by AGMARKNET. If a district is absent, you can type it manually."}
     return {"districts":[],"source":"unavailable","note":"AGMARKNET district lookup is unavailable for this state right now; type the district name manually."}
 
+def official_finance_reference(state: str, district: str, fy: str):
+    return result("PM-KISAN official scheme reference", "reference_available",
+        {"programme":"Pradhan Mantri Kisan Samman Nidhi (PM-KISAN)",
+         "published_benefit":"Rs 6,000 per year for an eligible farmer family, subject to scheme rules",
+         "selection":{"state":state,"district":district,"financial_year":fy},
+         "data_level":"National scheme reference only",
+         "district_disbursement_data":"Not provided by this reference; no district payment amount is inferred"},
+        note="Official scheme information only, not a live district-wise disbursement feed. District payment amounts require an API-enabled government dataset.",
+        url="https://pmkisan.gov.in/")
+
+def official_insurance_reference(state: str, district: str, fy: str):
+    return result("Pradhan Mantri Fasal Bima Yojana (PMFBY) official reference", "reference_available",
+        {"programme":"Pradhan Mantri Fasal Bima Yojana (PMFBY)",
+         "purpose":"Crop insurance under notified crops, seasons, areas and policy conditions",
+         "selection":{"state":state,"district":district,"financial_year":fy},
+         "data_level":"Scheme reference only",
+         "district_insured_area_premium_and_claims":"Not supplied by this reference; no district values are inferred"},
+        note="Official crop-insurance scheme reference only, not a district-level claims or premiums API. District statistics require an API-enabled dataset.",
+        url="https://pmfby.gov.in/")
+
 @app.get("/api/dashboard")
 def dashboard(state: str, district: str, fy: str):
     key=f"dash:{state}:{district}:{fy}"
@@ -450,8 +470,10 @@ def dashboard(state: str, district: str, fy: str):
             logging.exception("Climate fetch failed")
             sources["climate"]=result("Open-Meteo historical weather","error",note=f"Provider request failed: {type(e).__name__}.")
         sources["agriculture"]=ceda_agri_market(state,district,fy)
-        sources["finance"]=ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
-        sources["insurance"]=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
+        finance = ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
+        sources["finance"] = finance if finance.get("status") == "available" else official_finance_reference(state,district,fy)
+        insurance = ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
+        sources["insurance"] = insurance if insurance.get("status") == "available" else official_insurance_reference(state,district,fy)
         # IMD district warnings are current context, not historical FY data.
         # Try the documented IMD API first, then the public Mausam district-warning
         # endpoint as a fallback. Keep provider errors explicit rather than fabricating data.

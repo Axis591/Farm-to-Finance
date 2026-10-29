@@ -611,8 +611,8 @@ def _extract_income_rows_from_pdf():
         response.raise_for_status()
         reader = PdfReader(BytesIO(response.content), strict=False)
     except Exception:
-        logging.exception("Could not download/read ISSRF income PDF")
-        return []
+        logging.exception("Could not download/read ISSRF income PDF; use only pre-verified rows as fallback")
+        return _income_fallback()
     num = r"([\d,]+\.\d{2})"
     row_re = re.compile(r"(?<!\d)(\d{1,3})\s+([A-Za-z][A-Za-z&().,/'\- ]{0,75}?)\s+" +
                         r"\s+".join([num] * 7))

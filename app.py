@@ -433,7 +433,10 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return {"status":"ok","service":"Farm to Finance API","cache_ttl_seconds":CACHE_TTL}
+    return {"status":"ok","service":"Farm to Finance API","cache_ttl_seconds":CACHE_TTL,
+            "revision":os.getenv("RENDER_GIT_COMMIT","unknown"),
+            "agriculture_source":"CEDA Agri Market Data (AGMARKNET)",
+            "agriculture_history_from_fy":"2014-15"}
 
 @app.get("/api/states")
 def states():

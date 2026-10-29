@@ -759,11 +759,117 @@ def official_pmfby_national_summary():
                   note="Source: Ministry of Agriculture & Farmers Welfare, PMFBY Administrative Dashboard, Kharif season, last updated 28 September 2026 at 09:09 AM. This is an All-India scheme aggregate, not selected-state/district data. The 2026 Kharif claims figure is intentionally marked not final rather than treating the dashboard's displayed zero as a completed outcome. Gross premium and sum insured are conversions from the published ₹ lakh values.",
                   url="https://pmfby.gov.in/adminStatistics/dashboard")
 
+# Historical agricultural-loan recovery data from the Ministry of Agriculture Lok Sabha
+# answer dated 2 Jan 2018. Amounts in the published annexure are ₹ lakh.
+# StCB records cover reported 2017 audited data for 24/33 banks; DCCB records are
+# state-level, reported as at 30 Jun 2017 for 283/370 DCCBs. Do NOT describe as current.
+STCB_RECOVERY_2017 = {
+    "Andaman and Nicobar Islands": (11922.12, 8008.06, 67.17),
+    "Andhra Pradesh": (83240.75, 81899.17, 98.39),
+    "Assam": (6405.96, 2649.48, 41.36),
+    "Bihar": (130884.08, 122071.52, 93.27),
+    "Chandigarh": (1898.50, 1554.38, 81.87),
+    "Chhattisgarh": (50487.90, 38997.54, 77.24),
+    "Delhi": (44318.17, 42402.41, 95.68),
+    "Gujarat": (271995.58, 263896.78, 97.02),
+    "Haryana": (687985.00, 687722.00, 99.96),
+    "Himachal Pradesh": (20802.92, 10156.31, 48.82),
+    "Jammu and Kashmir": (7282.28, 5280.02, 72.51),
+    "Karnataka": (645674.89, 624913.15, 96.78),
+    "Kerala": (743361.00, 691507.95, 93.02),
+    "Madhya Pradesh": (676128.88, 606206.94, 89.66),
+    "Maharashtra": (890759.84, 744864.01, 83.62),
+    "Meghalaya": (10710.57, 2066.02, 19.29),
+    "Mizoram": (17681.23, 11011.69, 62.28),
+    "Odisha": (634429.26, 622139.95, 98.06),
+    "Puducherry": (36895.76, 34368.99, 93.15),
+    "Punjab": (715601.69, 713487.26, 99.70),
+    "Rajasthan": (634026.06, 632705.94, 99.79),
+    "Tamil Nadu": (627372.33, 620137.80, 98.85),
+    "Telangana": (242876.05, 242356.73, 99.79),
+    "Uttar Pradesh": (447719.14, 428442.56, 95.69),
+}
+DCCB_RECOVERY_2017 = {
+    "Andhra Pradesh": (735664.34, 653279.37, 88.80),
+    "Bihar": (49813.30, 17052.20, 34.23),
+    "Chhattisgarh": (465601.53, 331270.86, 71.15),
+    "Gujarat": (1323089.54, 1165744.25, 88.11),
+    "Haryana": (1059788.42, 718460.33, 67.79),
+    "Himachal Pradesh": (98579.02, 68676.89, 69.67),
+    "Jammu and Kashmir": (22374.73, 11927.22, 53.31),
+    "Jharkhand": (1313893.37, 1194776.08, 90.93),
+    "Karnataka": (1523842.79, 1082983.05, 71.07),
+    "Kerala": (1419850.20, 892302.49, 62.84),
+    "Madhya Pradesh": (3190011.08, 1454859.66, 45.61),
+    "Maharashtra": (1106846.28, 812026.56, 73.36),
+    "Odisha": (1067183.47, 812154.39, 76.10),
+    "Punjab": (1525588.99, 1260295.21, 82.61),
+    "Rajasthan": (1181975.84, 1036525.67, 87.69),
+    "Tamil Nadu": (444719.76, 400269.25, 90.00),
+    "Telangana": (552275.35, 157997.12, 28.61),
+    "Uttarakhand": (76242.69, 29800.27, 39.09),
+    "Uttar Pradesh": (147532.13, 103547.43, 70.19),
+    "West Bengal": (286368.50, 239256.88, 83.55),
+}
+
 def official_loan_recovery_gap(state: str, district: str, fy: str):
-    return result("Agricultural loan recovery / repayment", "not_available",
-                  {"state":state,"district":district,"financial_year":fy,"recovered_amount_crore":None,"recovery_rate_percent":None},
-                  note="The linked Lok Sabha/NABARD table reports credit disbursement flows and outstanding loan balances, not repayments collected. Recovery cannot be calculated by subtracting one from the other. A separate district-wise recovery dataset is required.",
-                  url=AGRI_CREDIT_SOURCE)
+    """Return historical official state-level cooperative-bank recoveries, never a derived current figure."""
+    stcb_name = next((name for name in STCB_RECOVERY_2017 if _norm(name) == _norm(state)), None)
+    dccb_name = next((name for name in DCCB_RECOVERY_2017 if _norm(name) == _norm(state)), None)
+    records = []
+    if stcb_name:
+        demand, recovered, rate = STCB_RECOVERY_2017[stcb_name]
+        records.append({
+            "bank_group": "State Cooperative Bank (StCB)",
+            "period_label": "Audited reporting period in 2017",
+            "demand_lakh": demand, "recovered_lakh": recovered,
+            "demand_crore": round(demand / 100, 4),
+            "recovered_crore": round(recovered / 100, 4),
+            "recovery_rate_percent": rate,
+            "reference_date": "2017",
+            "coverage_note": "Published audited records for 24 of 33 State Cooperative Banks."
+        })
+    if dccb_name:
+        demand, recovered, rate = DCCB_RECOVERY_2017[dccb_name]
+        records.append({
+            "bank_group": "District Central Cooperative Banks (DCCBs)",
+            "period_label": "Report as at 30 June 2017",
+            "demand_lakh": demand, "recovered_lakh": recovered,
+            "demand_crore": round(demand / 100, 4),
+            "recovered_crore": round(recovered / 100, 4),
+            "recovery_rate_percent": rate,
+            "reference_date": "2017-06-30",
+            "coverage_note": "Published state total from 283 of 370 DCCBs."
+        })
+    comparisons = [
+        {"state": name, "recovery_rate_percent": v[2], "recovered_crore": round(v[1] / 100, 4)}
+        for name, v in DCCB_RECOVERY_2017.items()
+    ]
+    comparisons.sort(key=lambda x: x["recovery_rate_percent"], reverse=True)
+    data = {
+        "state": state, "selected_district": district,
+        "data_level": "state-level cooperative-bank records; not district-level",
+        "current_year_recovery_data": None,
+        "records": records, "dccb_state_comparison": comparisons,
+        "reference_period": "2017 historical data",
+        "official_answer_date": "2018-01-02",
+        "source_date": "2017-06-30",
+        "amount_unit": "INR crore (converted from the source's INR lakh)"
+    }
+    if not records:
+        return result(
+            "Historical agricultural loan recovery / collection (cooperative banks)", "no_matching_records",
+            data,
+            updated="2018-01-02",
+            note="The linked official 2017 recovery tables do not report a cooperative-bank recovery record for this selected state. No current recovery amount or district amount is inferred.",
+            url="https://sansad.in/getFile/loksabhaquestions/annex/13/AU2329.pdf?source=pqals"
+        )
+    return result(
+        "Historical agricultural loan recovery / collection (cooperative banks)", "available",
+        data, updated="2018-01-02",
+        note="Historical only: Government of India, Ministry of Agriculture, Lok Sabha Unstarred Question 2329 answered 2 January 2018. StCB demand/collection data are reported for 2017; DCCB state totals are reported as at 30 June 2017. Amounts are converted from the source's ₹ lakh to ₹ crore. These are cooperative-bank records, not current total agricultural loan repayments, and the source does not report district-wise recovery.",
+        url="https://sansad.in/getFile/loksabhaquestions/annex/13/AU2329.pdf?source=pqals"
+    )
 
 
 IMD_DISTRICT_RSS = "https://mausam.imd.gov.in/imd_latest/contents/dist_nowcast_rss.php"

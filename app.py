@@ -1,4 +1,5 @@
 import os, time, logging, re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from typing import Optional
 from io import BytesIO
@@ -876,22 +877,38 @@ def dashboard(state: str, district: str, fy: str):
     key=f"dash:{state}:{district}:{fy}"
     def load():
         sources={}
-        try:
-            sources["climate"]=open_meteo_climate(state,district,fy)
-        except Exception as e:
-            logging.exception("Climate fetch failed")
-            sources["climate"]=result("Open-Meteo historical weather","error",note=f"Provider request failed: {type(e).__name__}.")
-        sources["agriculture"]=ceda_agri_market(state,district,fy)
-        sources["agri_credit"]=official_agriculture_credit(state,district,fy)
-        sources["farm_income"]=agricultural_household_income(state,district,fy)
-        sources["loan_recovery"]=official_loan_recovery_gap(state,district,fy)
-        sources["pmfby_national"] = official_pmfby_national_summary()
-        finance = ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
-        sources["finance"] = finance if finance.get("status") == "available" else official_finance_reference(state,district,fy)
-        insurance = ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
-        sources["insurance"] = insurance if insurance.get("status") == "available" else official_insurance_reference(state,district,fy)
-        # Current public IMD district warning/nowcast source; never infer no warning from a missing match.
-        sources["imd_current"] = imd_public_warnings(state, district)
+        def safe_call(name, fn, source_name):
+            try:
+                return name, fn()
+            except Exception as e:
+                logging.exception("%s source failed", name)
+                return name, result(source_name, "error", note=f"Source request failed: {type(e).__name__}. Other dashboard sections remain available.")
+
+        def finance_source():
+            item=ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
+            return item if item.get("status") == "available" else official_finance_reference(state,district,fy)
+        def insurance_source():
+            item=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
+            return item if item.get("status") == "available" else official_insurance_reference(state,district,fy)
+
+        jobs = [
+            ("climate", lambda: open_meteo_climate(state,district,fy), "Open-Meteo historical weather"),
+            ("agriculture", lambda: ceda_agri_market(state,district,fy), "Agricultural market prices (AGMARKNET)"),
+            ("agri_credit", lambda: official_agriculture_credit(state,district,fy), "Official agricultural credit"),
+            ("farm_income", lambda: agricultural_household_income(state,district,fy), "Agricultural household income"),
+            ("loan_recovery", lambda: official_loan_recovery_gap(state,district,fy), "Loan recovery"),
+            ("pmfby_national", lambda: official_pmfby_national_summary(), "PMFBY national summary"),
+            ("finance", finance_source, "Public finance / scheme data"),
+            ("insurance", insurance_source, "Crop insurance / risk finance"),
+            ("imd_current", lambda: imd_public_warnings(state,district), "IMD district nowcast/warnings"),
+        ]
+        # Fetch independent sources concurrently so one slow provider does not keep
+        # every dashboard panel blank while the other sources are already available.
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures=[pool.submit(safe_call,name,fn,source_name) for name,fn,source_name in jobs]
+            for future in as_completed(futures):
+                name, payload = future.result()
+                sources[name]=payload
 
         return {"selection":{"state":state,"district":district,"fy":fy},"generated_at":date.today().isoformat(),"sources":sources,
           "disclaimer":"Credit disbursement is state/UT-level from a Ministry of Finance Lok Sabha answer dated 23 March 2026, not district-specific. Outstanding loans are provisional as of 31 December 2025. Agricultural-household income is a model-based estimate for July 2018–June 2019, not farm profit or current revenue. Loan repayments and farm-business profit are not inferred where verified data are unavailable. CEDA/AGMARKNET reports mandi prices, not crop production. Climate uses gridded weather estimates."}

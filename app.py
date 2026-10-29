@@ -43,22 +43,81 @@ def fy_dates(fy: str):
         return f"{y}-04-01", f"{y+1}-03-31"
 
 def geocode_district(district: str, state: str):
-    q=f"{district}, {state}, India"
-    r=HTTP.get("https://geocoding-api.open-meteo.com/v1/search", params={"name":district,"count":10,"language":"en","format":"json"}, timeout=15)
-    r.raise_for_status()
-    candidates=r.json().get("results",[])
-    state_norm=state.lower().replace(" ","")
-    # Prefer an Indian result with state/admin1 matching selected state.
-    india=[x for x in candidates if x.get("country_code")=="IN"]
-    matched=[x for x in india if state_norm in (x.get("admin1","").lower().replace(" ","")+x.get("name","").lower().replace(" ",""))]
-    pool=matched or india
-    if not pool:
-        # Try full district + state query via name parameter
-        r=HTTP.get("https://geocoding-api.open-meteo.com/v1/search", params={"name":q,"count":10,"language":"en","format":"json"}, timeout=15)
+    """Resolve a district using an exact place query first, then safe state-aware fallbacks."""
+    state_clean = state.strip()
+    district_clean = district.strip()
+    if not district_clean:
+        return None
+
+    # Nominatim can resolve administrative district boundaries that the city-focused
+    # Open-Meteo geocoder may not return. Use a descriptive User-Agent and limit
+    # requests to one query per dashboard cache window in normal use.
+    try:
+        r = HTTP.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": f"{district_clean}, {state_clean}, India", "format": "jsonv2", "limit": 5, "countrycodes": "in"},
+            headers={"Accept-Language": "en"},
+            timeout=15,
+        )
         r.raise_for_status()
-        pool=[x for x in r.json().get("results",[]) if x.get("country_code")=="IN"]
-    if not pool: return None
-    return pool[0]
+        places = r.json()
+        if places:
+            # Prefer an administrative boundary result when one is available.
+            places.sort(key=lambda x: (
+                0 if "boundary" in str(x.get("type", "")).lower() or "administrative" in str(x.get("type", "")).lower() else 1,
+                0 if district_clean.lower() in str(x.get("display_name", "")).lower() else 1,
+            ))
+            p = places[0]
+            return {
+                "name": district_clean,
+                "admin1": state_clean,
+                "latitude": float(p["lat"]),
+                "longitude": float(p["lon"]),
+            }
+    except Exception:
+        logging.info("Nominatim district lookup unavailable; trying Open-Meteo geocoding")
+
+    # Open-Meteo search fallback. Rank candidates by country, selected state and
+    # district-name similarity; never silently use a same-named place in another state.
+    queries = [district_clean, f"{district_clean}, {state_clean}, India"]
+    candidates = []
+    for query in queries:
+        try:
+            r = HTTP.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={"name": query, "count": 20, "language": "en", "format": "json"},
+                timeout=15,
+            )
+            r.raise_for_status()
+            candidates.extend(r.json().get("results", []))
+        except Exception:
+            continue
+
+    state_norm = state_clean.lower().replace(" ", "").replace("&", "and")
+    district_norm = district_clean.lower().replace(" ", "").replace("-", "")
+    scored = []
+    seen = set()
+    for place in candidates:
+        if place.get("country_code") != "IN":
+            continue
+        admins = [str(place.get(k, "")) for k in ("admin1", "admin2", "admin3", "admin4")]
+        admin_norm = "".join(x.lower().replace(" ", "").replace("&", "and") for x in admins)
+        name_norm = str(place.get("name", "")).lower().replace(" ", "").replace("-", "")
+        # State must match when administrative metadata is present. Avoid guessing
+        # based only on a district name shared by multiple Indian states.
+        state_match = state_norm in admin_norm or state_norm in name_norm
+        name_match = name_norm == district_norm or district_norm in name_norm or name_norm in district_norm
+        if not state_match or not name_match:
+            continue
+        identity = (place.get("latitude"), place.get("longitude"))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        scored.append((0 if name_norm == district_norm else 1, place))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item[0])
+    return scored[0][1]
 
 def open_meteo_climate(state, district, fy):
     start,end=fy_dates(fy)

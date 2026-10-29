@@ -376,6 +376,22 @@ def ceda_agri_market(state: str, district: str, fy: str, commodity: str = "Wheat
                 normalized.append(record)
         normalized.sort(key=lambda item: item["date"], reverse=True)
         latest = normalized[0] if normalized else None
+        def _price_float(value):
+            try:
+                return float(str(value).replace(",", "").strip()) if value not in (None, "") else None
+            except (TypeError, ValueError):
+                return None
+        modal_series = [(row, _price_float(row.get("modal_price_rs_per_quintal"))) for row in normalized[:12]]
+        modal_series = [(row, value) for row, value in modal_series if value is not None and value > 0]
+        price_change_percent = None
+        price_change_start_date = price_change_end_date = None
+        price_change_start_value = price_change_end_value = None
+        if len(modal_series) >= 2:
+            newest_row, newest_price = modal_series[0]
+            oldest_row, oldest_price = modal_series[-1]
+            price_change_percent = round((newest_price - oldest_price) / oldest_price * 100, 2)
+            price_change_start_date, price_change_start_value = oldest_row["date"], oldest_price
+            price_change_end_date, price_change_end_value = newest_row["date"], newest_price
         note = (
             (f"CEDA/AGMARKNET monthly mandi-price series for {commodity_name}, {resolved_district}, FY {fy}. "
              if district_level else f"CEDA/AGMARKNET state-level aggregate for {state}; district '{district}' could not be mapped confidently, so these records are NOT district-specific. FY {fy}. ")
@@ -390,6 +406,11 @@ def ceda_agri_market(state: str, district: str, fy: str, commodity: str = "Wheat
                        "data_level":("district" if district_level else "state aggregate fallback"),
                        "financial_year":fy,"latest_available_record":latest,"recent_records":normalized[:12],
                        "records_returned":len(normalized),"price_unit":"INR per quintal",
+                       "price_change_percent_latest_vs_oldest":price_change_percent,
+                       "price_change_start_date":price_change_start_date,
+                       "price_change_end_date":price_change_end_date,
+                       "price_change_start_value":price_change_start_value,
+                       "price_change_end_value":price_change_end_value,
                        "period_start":start,"period_end":end},
                       updated=(latest.get("date") if latest else None), note=note, url=source_url)
     except requests.exceptions.HTTPError as e:

@@ -315,7 +315,7 @@ def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: st
     # data.gov.in resource IDs are UUIDs (with or without hyphens). API keys pasted
     # into this field are not resource IDs and should not be sent as endpoint paths.
     if not re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", resource_id):
-        return result(label,"not_configured",note="The value in this resource-ID field is not a valid data.gov.in resource ID format. Replace it with the dataset's UUID from its API details; keep your API key only in DATA_GOV_IN_API_KEY.",url="https://www.data.gov.in/")
+        return result(label,"not_configured",note="This panel needs a real dataset resource UUID (not an API key, URL, or placeholder). Copy the UUID from that specific dataset's API details on data.gov.in. Agriculture uses its own built-in AGMARKNET resource.",url="https://www.data.gov.in/")
     def fetch():
         url=f"https://api.data.gov.in/resource/{resource_id}"
         params={"api-key":key,"format":"json","limit":1000}
@@ -437,8 +437,9 @@ def dashboard(state: str, district: str, fy: str):
 
 @app.get("/api/config")
 def config():
+    uuid_pattern = r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     return {"ogd_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip()),
-            "agriculture_resource_configured":bool(os.getenv("OGD_AGRICULTURE_RESOURCE_ID","").strip()),
-            "finance_resource_configured":bool(os.getenv("OGD_FINANCE_RESOURCE_ID","").strip()),
-            "insurance_resource_configured":bool(os.getenv("OGD_INSURANCE_RESOURCE_ID","").strip()),
-            "message":"Set API credentials and resource IDs in the server environment to activate these connectors."}
+            "agriculture_resource_configured":True,
+            "finance_resource_configured":bool(re.fullmatch(uuid_pattern, os.getenv("OGD_FINANCE_RESOURCE_ID","").strip())),
+            "insurance_resource_configured":bool(re.fullmatch(uuid_pattern, os.getenv("OGD_INSURANCE_RESOURCE_ID","").strip())),
+            "message":"Agriculture uses the built-in Government AGMARKNET resource. Finance and insurance require their own real data.gov.in resource UUIDs plus DATA_GOV_IN_API_KEY."}

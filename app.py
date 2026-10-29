@@ -207,18 +207,53 @@ def dashboard(state: str, district: str, fy: str):
         sources["agriculture"]=ogd_resource(os.getenv("OGD_AGRICULTURE_RESOURCE_ID",""),state,district,fy,"Agriculture / crop statistics (OGD)")
         sources["finance"]=ogd_resource(os.getenv("OGD_FINANCE_RESOURCE_ID",""),state,district,fy,"Public finance / scheme data (OGD)")
         sources["insurance"]=ogd_resource(os.getenv("OGD_INSURANCE_RESOURCE_ID",""),state,district,fy,"Crop insurance / risk finance (OGD)")
-        # IMD public API: live warnings/observations are context, not historical FY data.
-        try:
-            r=HTTP.get("https://api.imd.gov.in/api/v1/districtwarning",timeout=20)
-            r.raise_for_status()
-            raw=r.json()
-            records=raw if isinstance(raw,list) else raw.get("data",raw.get("records",[])) if isinstance(raw,dict) else []
-            matched=[x for x in records if district.lower() in str(x.get("District",x.get("district",""))).lower()]
-            sources["imd_current"]=result("India Meteorological Department (IMD) district warnings","available" if matched else "no_matching_records",
-                 {"records":matched[:10]},updated=date.today().isoformat(),
-                 note="Current warning feed, not a historical FY dataset. Matching is by district name and may need official district IDs.",url="https://api.imd.gov.in/public/api_reference.html")
-        except Exception as e:
-            sources["imd_current"]=result("India Meteorological Department (IMD) district warnings","unavailable",note="Feed unavailable from this server or endpoint access was restricted.",url="https://api.imd.gov.in/public/api_reference.html")
+        # IMD district warnings are current context, not historical FY data.
+        # Try the documented IMD API first, then the public Mausam district-warning
+        # endpoint as a fallback. Keep provider errors explicit rather than fabricating data.
+        imd_urls = [
+            "https://api.imd.gov.in/api/v1/districtwarning",
+            "https://mausam.imd.gov.in/api/warnings_district_api.php",
+        ]
+        imd_errors = []
+        imd_loaded = False
+        for imd_url in imd_urls:
+            try:
+                r = HTTP.get(imd_url, timeout=20)
+                r.raise_for_status()
+                raw = r.json()
+                records = raw if isinstance(raw, list) else raw.get("data", raw.get("records", raw.get("warnings", []))) if isinstance(raw, dict) else []
+                if isinstance(records, dict):
+                    records = list(records.values())
+                if not isinstance(records, list):
+                    records = []
+                matched = []
+                for row in records:
+                    if not isinstance(row, dict):
+                        continue
+                    row_district = str(row.get("District", row.get("district", row.get("district_name", ""))))
+                    if district.strip().casefold() == row_district.strip().casefold():
+                        matched.append(row)
+                if matched:
+                    sources["imd_current"] = result(
+                        "India Meteorological Department (IMD) district warnings", "available",
+                        {"records": matched[:10]}, updated=date.today().isoformat(),
+                        note="Current IMD district warning feed; not a historical FY dataset. Verify issue date and district identity before operational use.",
+                        url=imd_url)
+                    imd_loaded = True
+                    break
+                # A successful but unrecognized payload is not evidence that there are no warnings.
+                if records:
+                    imd_errors.append("Provider responded but district records could not be matched")
+                else:
+                    imd_errors.append("Provider returned no recognizable records")
+            except Exception as e:
+                imd_errors.append(type(e).__name__)
+        if not imd_loaded:
+            sources["imd_current"] = result(
+                "India Meteorological Department (IMD) district warnings", "unavailable",
+                note="Could not retrieve and match district warnings from the documented IMD endpoint or the public Mausam fallback. Check provider availability and district spelling; do not interpret this as 'no warning'.",
+                url="https://api.imd.gov.in/public/api_reference.html")
+
         return {"selection":{"state":state,"district":district,"fy":fy},"generated_at":date.today().isoformat(),"sources":sources,
           "disclaimer":"No configured OGD resources means agriculture and finance figures are unavailable, not zero. Climate data is a location-based gridded estimate, not a certified district statistic. Do not treat modelled indicators as official financial or climate-risk ratings."}
     return cached(key,load)

@@ -1183,6 +1183,13 @@ def official_agricultural_insurance(state: str, district: str, fy: str):
                      "sum_insured_crore": None, "farmers_premium_crore": None,
                      "paid_claims_crore": None, "farmers_claims_paid_lakh": None}
     data_level = "district" if district_data else "state/UT aggregate"
+    state_scheme_info = None
+    if _norm(state) == _norm("West Bengal"):
+        state_scheme_info = {
+            "name": "Bangla Shasya Bima",
+            "url": "https://admin-banglashasyabima.wb.gov.in/insurance_calculations",
+            "note": "West Bengal's state crop-insurance calculator requires season, year, district, block, crop and insured area. It does not provide one universal district sum-insured amount."
+        }
     note_scope = ("District row matched in the official Karnataka annexure." if district_data else
                   "Only a state/UT aggregate is published for this selected geography in the linked source; no district-level amount is inferred.")
     if state == "West Bengal" and state_row.get("applications_insured_lakh") == 0.0:
@@ -1192,6 +1199,7 @@ def official_agricultural_insurance(state: str, district: str, fy: str):
         {"state": state, "district": district, "data_level": data_level,
          "reference_period": "2020-21 to 2024-25", "source_as_of": "2025-10-31",
          "state_summary": state_row, "district_record": district_data,
+         "state_scheme_info": state_scheme_info,
          "state_comparison_sum_insured": comparisons, "state_comparison_claims_paid": claims_comparison,
          "district_records": all_districts,
          "numeric_precision": "State values as printed to one decimal in the parliamentary annexure; Karnataka district values as printed to two decimals in ₹ crore."},

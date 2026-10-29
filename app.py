@@ -953,9 +953,9 @@ def dashboard(state: str, district: str, fy: str):
 
 @app.get("/api/config")
 def config():
-    uuid_pattern = r"[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-    return {"ogd_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip()),
-            "agriculture_resource_configured":True,
-            "finance_resource_configured":bool(re.fullmatch(uuid_pattern, os.getenv("OGD_FINANCE_RESOURCE_ID","").strip())),
-            "insurance_resource_configured":bool(re.fullmatch(uuid_pattern, os.getenv("OGD_INSURANCE_RESOURCE_ID","").strip())),
-            "message":"Agriculture uses the built-in Government AGMARKNET resource. Finance and insurance require their own real data.gov.in resource UUIDs plus DATA_GOV_IN_API_KEY."}
+    return {"agmarknet_price_source":"CEDA/AGMARKNET integration",
+            "official_agriculture_credit_available":True,
+            "pm_kisan_scheme_reference_available":True,
+            "pmfby_kharif_snapshot_available":True,
+            "optional_agricultural_insurance_api_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip() and os.getenv("OGD_INSURANCE_RESOURCE_ID","").strip()),
+            "message":"Dashboard panels are limited to agriculture, farm-weather risk context, agricultural household benchmarks, agricultural credit, farmer support, and crop insurance. Scheme references are not presented as district payment records; state and national values are labeled by geographic scope."}

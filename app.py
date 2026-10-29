@@ -775,90 +775,138 @@ def _imd_item_text(item, tag):
             return (child.text or "").strip()
     return ""
 
+def _imd_exact_district_title(title: str, district: str) -> bool:
+    """Only accept an exact district label, never a match buried in forecast prose."""
+    title_norm = _norm(title)
+    district_norm = _norm(district)
+    if not title_norm or not district_norm:
+        return False
+    # Common official spelling variants found in Indian district lists.
+    aliases = {
+        "pashchimmedinipur": ["paschim medinipur", "pashchim medinipur", "west midnapore"],
+        "paschimmedinipur": ["paschim medinipur", "pashchim medinipur", "west midnapore"],
+        "purbamedinipur": ["purba medinipur", "east midnapore"],
+        "purvasinghbhum": ["east singhbhum", "purbi singhbhum"],
+        "ahmadabad": ["ahmedabad", "ahmadabad"],
+        "gurugram": ["gurugram", "gurgaon"],
+        "prayagraj": ["prayagraj", "allahabad"],
+        "sri potti sriramulu nellore": ["nellore", "sri potti sriramulu nellore"],
+        "ysr": ["ysr", "kadapa", "cuddapah"],
+        "uttara kannada": ["uttara kannada", "uttarkannada", "north kanara"],
+        "chamarajanagar": ["chamarajanagar", "chamarajnagar"],
+        "kalaburagi": ["kalaburagi", "kalaburgi", "gulbarga"],
+        "yadgir": ["yadgir", "yadgiri"],
+        "baleshwar": ["baleshwar", "balasore"],
+    }
+    accepted = {district_norm}
+    for key, names in aliases.items():
+        normalized_names = {_norm(n) for n in names}
+        if district_norm == _norm(key) or district_norm in normalized_names:
+            accepted.add(_norm(key))
+            accepted.update(normalized_names)
+    # Labels may be followed only by the word "district"; forecast description text
+    # is deliberately never used for geographic matching.
+    return title_norm in accepted or title_norm in {name + "district" for name in accepted}
+
+
 def imd_public_warnings(state: str, district: str):
-    """Use the public IMD district nowcast RSS; fall back to clearly linked official warning map."""
+    """Return only selected-district warnings; never use unrelated RSS items as alerts."""
     source = "India Meteorological Department (IMD) district nowcast/warnings"
-    # IMD's documented API has a district ID parameter and may deny unregistered clients.
-    # The public RSS avoids inventing an Obj_id. Only return a district-specific warning
-    # when the district can be matched in the item text.
-    # First try IMD's documented district-wise warning API without an ID; some deployments
-    # return the full list. If provider access is denied or the shape is not usable, try RSS.
     api_url = "https://mausam.imd.gov.in/api/warnings_district_api.php"
+
+    # Prefer structured API records with district and, when provided, state metadata.
     try:
-        api_response = HTTP.get(api_url, timeout=20, headers={"Accept":"application/json"})
-        api_response.raise_for_status()
-        api_json = api_response.json()
-        api_rows = _items(api_json.get("data", api_json.get("records", api_json.get("warnings", api_json))) if isinstance(api_json, dict) else api_json)
-        api_matches = []
-        for row in api_rows:
+        response = HTTP.get(api_url, timeout=15, headers={"Accept": "application/json"})
+        response.raise_for_status()
+        payload = response.json()
+        rows = _items(payload.get("data", payload.get("records", payload.get("warnings", payload))) if isinstance(payload, dict) else payload)
+        matches = []
+        for row in rows:
             if not isinstance(row, dict):
                 continue
             row_district = _field(row, "District", "district", "district_name", "districtName", "DISTRICT")
             row_state = _field(row, "State", "state", "state_name", "stateName", "STATE")
-            if _norm(row_district) == _norm(district) and (not row_state or _norm(row_state) == _norm(state)):
-                api_matches.append(row)
-        if api_matches:
-            return result(source, "available",
-                          {"state":state,"district":district,"feed":"IMD district wise warning API","records":api_matches[:10]},
-                          updated=date.today().isoformat(),
-                          note="Live district warning records returned by IMD's published district-wise warning API. Review validity/issue times in the records. This is current warning data, not a historical FY series.",
-                          url=api_url)
+            if _norm(row_district) != _norm(district):
+                continue
+            if row_state and _norm(row_state) != _norm(state):
+                continue
+            matches.append(row)
+        if matches:
+            return result(
+                source, "available",
+                {"state": state, "district": district, "district_match": True,
+                 "state_match": bool(_field(matches[0], "State", "state", "state_name", "stateName", "STATE")),
+                 "feed": "IMD district-wise warning API", "records": matches[:10]},
+                updated=date.today().isoformat(),
+                note="Only structured records whose district name matches the selected district are shown. If the provider includes state metadata, it must also match the selected state. Review the issue time and validity before acting.",
+                url=api_url
+            )
     except Exception:
-        logging.info("IMD JSON warning API not available; trying public RSS")
+        logging.info("IMD JSON warning API unavailable or returned no verified match; checking RSS title labels")
+
+    # RSS is a nationwide feed. Its title typically contains the district name, while
+    # the description contains generic weather language. Match the title exactly and
+    # reject a record when explicit state metadata conflicts with the selected state.
     try:
-        response = HTTP.get(IMD_DISTRICT_RSS, timeout=25, headers={"Accept":"application/rss+xml, application/xml, text/xml"})
+        response = HTTP.get(IMD_DISTRICT_RSS, timeout=18,
+                            headers={"Accept": "application/rss+xml, application/xml, text/xml"})
         response.raise_for_status()
-        payload = response.content
-        root = ET.fromstring(payload)
+        root = ET.fromstring(response.content)
         items = [el for el in root.iter() if el.tag.split("}")[-1].casefold() == "item"]
-        parsed = []
-        district_norm = _norm(district)
-        aliases = {
-            "paschimmedinipur": ["paschim medinipur","pashchim medinipur","west midnapore"],
-            "purba medinipur": ["purba medinipur","east midnapore"],
-            "ahmadabad": ["ahmedabad","ahmadabad"],
-            "gurugram": ["gurugram","gurgaon"],
-            "prayagraj": ["prayagraj","allahabad"],
-            "sri potti sriramulu nellore": ["nellore","sri potti sriramulu nellore"],
-            "ysr": ["ysr","kadapa","cuddapah"],
-        }
-        wanted = {_norm(district)}
-        for key, vals in aliases.items():
-            if _norm(key) == district_norm or any(_norm(v) == district_norm for v in vals):
-                wanted.update(_norm(v) for v in vals)
-                wanted.add(_norm(key))
+        parsed, matches = [], []
         for item in items:
             title = _imd_item_text(item, "title")
             description = _imd_item_text(item, "description")
-            pub_date = _imd_item_text(item, "pubDate")
-            link = _imd_item_text(item, "link")
-            guid = _imd_item_text(item, "guid")
-            body = " ".join(x for x in (title, description, pub_date) if x)
-            if body:
-                parsed.append({"title":title, "description":description, "published":pub_date, "link":link or guid or IMD_DISTRICT_MAP})
-        matches = [row for row in parsed if any(alias in _norm(row["title"] + " " + row["description"]) for alias in wanted if len(alias) >= 5)]
-        if matches:
-            return result(source, "available",
-                          {"state":state,"district":district,"feed":"IMD district nowcast RSS","records":matches[:10],
-                           "feed_items_checked":len(parsed),"district_match":True},
-                          updated=date.today().isoformat(),
-                          note="District-specific text was matched in IMD's public district nowcast RSS feed. This is current nowcast/warning information, not a historical FY series. Confirm issue time and validity before acting.",
-                          url=IMD_DISTRICT_RSS)
-        # Successful public feed but no text match is NOT interpreted as no warning.
-        return result(source, "reference_available",
-                      {"state":state,"district":district,"feed":"IMD public district nowcast RSS",
-                       "feed_items_checked":len(parsed),"latest_feed_items":parsed[:8],
-                       "district_match":False,"official_district_warning_map":IMD_DISTRICT_MAP},
-                      updated=date.today().isoformat(),
-                      note="IMD's public RSS loaded, but its item text did not confidently identify this selected district. This is not evidence that there is no warning. Use the official district-wise warning map for the live colour-coded district forecast.",
-                      url=IMD_DISTRICT_MAP)
+            published = _imd_item_text(item, "pubDate")
+            link = _imd_item_text(item, "link") or _imd_item_text(item, "guid") or IMD_DISTRICT_MAP
+            row_state = (
+                _imd_item_text(item, "state") or _imd_item_text(item, "state_name")
+                or _imd_item_text(item, "stateName") or _imd_item_text(item, "state_ut")
+            )
+            if not title:
+                continue
+            rec = {"title": title, "description": description, "published": published,
+                   "link": link, "district": district, "state": row_state or None}
+            parsed.append(rec)
+            if not _imd_exact_district_title(title, district):
+                continue
+            if row_state and _norm(row_state) != _norm(state):
+                continue
+            matches.append(rec)
+
+        # Do not treat a national feed's latest items as warnings for this district.
+        # Multiple same-name records without state metadata are ambiguous and are withheld.
+        if matches and (any(x.get("state") for x in matches) or len(matches) == 1):
+            return result(
+                source, "available",
+                {"state": state, "district": district, "district_match": True,
+                 "state_match": bool(matches[0].get("state")),
+                 "feed": "IMD district nowcast RSS", "records": matches[:5],
+                 "feed_items_checked": len(parsed)},
+                updated=date.today().isoformat(),
+                note="The alert title exactly matched the selected district. Where the feed supplies state metadata, it was checked against the selected state. The RSS is a live advisory feed; review issue time and validity. The feed may omit state labels, so ambiguous duplicate district names are withheld.",
+                url=IMD_DISTRICT_RSS
+            )
+        return result(
+            source, "reference_available",
+            {"state": state, "district": district, "district_match": False,
+             "records": [], "feed_items_checked": len(parsed),
+             "official_district_warning_map": IMD_DISTRICT_MAP},
+            updated=date.today().isoformat(),
+            note="No verified alert matched this selected state/district in the public feed. This does NOT mean there is no warning. Unmatched districts from other states are intentionally not shown; check the official district-wise warning map.",
+            url=IMD_DISTRICT_MAP
+        )
     except Exception as e:
         logging.exception("IMD public RSS unavailable")
-        return result(source, "reference_available",
-                      {"state":state,"district":district,"official_district_warning_map":IMD_DISTRICT_MAP,
-                       "official_nowcast_rss":IMD_DISTRICT_RSS},
-                      note=f"The public RSS could not be read by this service ({type(e).__name__}); IMD's official live warning map remains linked. The protected JSON API requires a valid district ID and may require IMD access authorization. Do not interpret this as 'no warning'.",
-                      url=IMD_DISTRICT_MAP)
+        return result(
+            source, "reference_available",
+            {"state": state, "district": district, "district_match": False,
+             "records": [], "official_district_warning_map": IMD_DISTRICT_MAP,
+             "official_nowcast_rss": IMD_DISTRICT_RSS},
+            note=f"The public RSS could not be read ({type(e).__name__}). No warning has been inferred for the selected district; use the official IMD district-wise warning map.",
+            url=IMD_DISTRICT_MAP
+        )
+
 
 def official_finance_reference(state: str, district: str, fy: str):
     """Verified PM-KISAN scheme terms; this is a scheme reference, never a district payment claim."""

@@ -476,8 +476,16 @@ def _ogd_mandi_daily_records(state: str, district: str, commodity: str):
             response.raise_for_status()
             payload = response.json()
         except requests.exceptions.RequestException:
-            logging.exception("data.gov.in mandi request failed for %s", term)
-            continue
+            # Retry without optional sorting; some OGD deployments expose the
+            # same fields but reject sort query parameters.
+            params.pop("sort[arrival_date]", None)
+            try:
+                response = HTTP.get(url, params=params, timeout=25)
+                response.raise_for_status()
+                payload = response.json()
+            except requests.exceptions.RequestException:
+                logging.exception("data.gov.in mandi request failed for %s", term)
+                continue
         for row in payload.get("records", []) if isinstance(payload, dict) else []:
             if not isinstance(row, dict):
                 continue

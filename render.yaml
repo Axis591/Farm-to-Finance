@@ -10,5 +10,7 @@ services:
         sync: false
       - key: CACHE_TTL_SECONDS
         value: "1800"
+      - key: CACHE_MAX_ITEMS
+        value: "1500"
       - key: CORS_ORIGINS
         value: "*"

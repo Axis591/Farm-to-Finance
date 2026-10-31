@@ -1,4 +1,6 @@
 import os, time, logging, re
+from collections import OrderedDict
+from threading import RLock, local
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -17,21 +19,52 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Farm to Finance Data API", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS","*").split(","), allow_methods=["*"], allow_headers=["*"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
-CACHE = {}
-CACHE_TTL = int(os.getenv("CACHE_TTL_SECONDS", "1800"))
-HTTP = requests.Session()
-HTTP.headers.update({"User-Agent":"FarmToFinanceDashboard/1.0 (data integration; contact admin)"})
+# Bounded, thread-safe in-process cache. The free/starter service may restart at any
+# time, so correctness must never depend on cache persistence.
+CACHE = OrderedDict()
+CACHE_LOCK = RLock()
+CACHE_TTL = max(60, int(os.getenv("CACHE_TTL_SECONDS", "1800")))
+CACHE_MAX_ITEMS = max(100, int(os.getenv("CACHE_MAX_ITEMS", "1500")))
+HTTP_LOCAL = local()
+HTTP_USER_AGENT = "FarmToFinanceDashboard/1.1 (agricultural research dashboard)"
+
+
+def http_session():
+    """A requests.Session per worker thread; requests.Session is not shared across threads."""
+    session = getattr(HTTP_LOCAL, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.headers.update({"User-Agent": HTTP_USER_AGENT})
+        HTTP_LOCAL.session = session
+    return session
 
 STATES = [
 "Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura","Uttar Pradesh","Uttarakhand","West Bengal",
 "Andaman and Nicobar Islands","Chandigarh","Dadra and Nagar Haveli and Daman and Diu","Delhi","Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry"
 ]
 def cached(key, fn):
-    now=time.time()
-    if key in CACHE and now-CACHE[key][0] < CACHE_TTL:
-        return CACHE[key][1]
-    value=fn()
-    CACHE[key]=(now,value)
+    now = time.monotonic()
+    with CACHE_LOCK:
+        entry = CACHE.get(key)
+        if entry and now - entry[0] < CACHE_TTL:
+            CACHE.move_to_end(key)
+            return entry[1]
+        if entry:
+            CACHE.pop(key, None)
+
+    # Network work happens outside the lock: unrelated dashboard sources stay parallel.
+    value = fn()
+
+    with CACHE_LOCK:
+        CACHE[key] = (time.monotonic(), value)
+        CACHE.move_to_end(key)
+        # Opportunistically remove expired entries before applying the hard size limit.
+        cutoff = time.monotonic() - CACHE_TTL
+        expired = [cache_key for cache_key, (created, _) in CACHE.items() if created < cutoff]
+        for cache_key in expired:
+            CACHE.pop(cache_key, None)
+        while len(CACHE) > CACHE_MAX_ITEMS:
+            CACHE.popitem(last=False)
     return value
 
 def result(source, status, data=None, updated=None, note=None, url=None):
@@ -57,7 +90,7 @@ def geocode_district(district: str, state: str):
     # Open-Meteo geocoder may not return. Use a descriptive User-Agent and limit
     # requests to one query per dashboard cache window in normal use.
     try:
-        r = HTTP.get(
+        r = http_session().get(
             "https://nominatim.openstreetmap.org/search",
             params={"q": f"{district_clean}, {state_clean}, India", "format": "jsonv2", "limit": 5, "countrycodes": "in"},
             headers={"Accept-Language": "en"},
@@ -87,7 +120,7 @@ def geocode_district(district: str, state: str):
     candidates = []
     for query in queries:
         try:
-            r = HTTP.get(
+            r = http_session().get(
                 "https://geocoding-api.open-meteo.com/v1/search",
                 params={"name": query, "count": 20, "language": "en", "format": "json"},
                 timeout=15,
@@ -142,7 +175,7 @@ def open_meteo_climate(state, district, fy):
     url="https://archive-api.open-meteo.com/v1/archive"
     params={"latitude":place["latitude"],"longitude":place["longitude"],"start_date":start,"end_date":end,
             "daily":"precipitation_sum,temperature_2m_max,temperature_2m_min","timezone":"Asia/Kolkata"}
-    r=HTTP.get(url,params=params,timeout=35)
+    r=http_session().get(url,params=params,timeout=35)
     r.raise_for_status()
     j=r.json(); daily=j.get("daily",{})
     rain=[v for v in daily.get("precipitation_sum",[]) if isinstance(v,(int,float))]
@@ -227,9 +260,9 @@ def _ceda_request(path, params=None, body=None, method="GET"):
     }
     url = f"{CEDA_BASE}/{path.lstrip('/')}"
     if method == "POST":
-        response = HTTP.post(url, params=params or {}, json=body or {}, headers=headers, timeout=35)
+        response = http_session().post(url, params=params or {}, json=body or {}, headers=headers, timeout=35)
     else:
-        response = HTTP.get(url, params=params or {}, headers=headers, timeout=25)
+        response = http_session().get(url, params=params or {}, headers=headers, timeout=25)
     response.raise_for_status()
     return response.json()
 
@@ -472,7 +505,7 @@ def _ogd_mandi_daily_records(state: str, district: str, commodity: str):
             "sort[arrival_date]": "desc",
         }
         try:
-            response = HTTP.get(url, params=params, timeout=25)
+            response = http_session().get(url, params=params, timeout=25)
             response.raise_for_status()
             payload = response.json()
         except requests.exceptions.RequestException:
@@ -480,7 +513,7 @@ def _ogd_mandi_daily_records(state: str, district: str, commodity: str):
             # same fields but reject sort query parameters.
             params.pop("sort[arrival_date]", None)
             try:
-                response = HTTP.get(url, params=params, timeout=25)
+                response = http_session().get(url, params=params, timeout=25)
                 response.raise_for_status()
                 payload = response.json()
             except requests.exceptions.RequestException:
@@ -568,7 +601,7 @@ def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: st
     def fetch():
         url=f"https://api.data.gov.in/resource/{resource_id}"
         params={"api-key":key,"format":"json","limit":1000}
-        r=HTTP.get(url,params=params,timeout=30); r.raise_for_status()
+        r=http_session().get(url,params=params,timeout=30); r.raise_for_status()
         j=r.json()
         records=j.get("records",[])
         # Filter records only where fields are recognizably present; do not claim a match without evidence.
@@ -791,7 +824,7 @@ def _income_fallback():
 def _extract_income_rows_from_pdf():
     """Read district income appendix; records remain tagged as model estimates, not profit."""
     try:
-        response = HTTP.get(AGRI_INCOME_PDF, timeout=75)
+        response = http_session().get(AGRI_INCOME_PDF, timeout=75)
         response.raise_for_status()
         reader = PdfReader(BytesIO(response.content), strict=False)
     except Exception:
@@ -1088,7 +1121,7 @@ def imd_public_warnings(state: str, district: str):
 
     # Prefer structured API records with district and, when provided, state metadata.
     try:
-        response = HTTP.get(api_url, timeout=15, headers={"Accept": "application/json"})
+        response = http_session().get(api_url, timeout=15, headers={"Accept": "application/json"})
         response.raise_for_status()
         payload = response.json()
         rows = _items(payload.get("data", payload.get("records", payload.get("warnings", payload))) if isinstance(payload, dict) else payload)
@@ -1125,7 +1158,7 @@ def imd_public_warnings(state: str, district: str):
     # the description contains generic weather language. Match the title exactly and
     # reject a record when explicit state metadata conflicts with the selected state.
     try:
-        response = HTTP.get(IMD_DISTRICT_RSS, timeout=18,
+        response = http_session().get(IMD_DISTRICT_RSS, timeout=18,
                             headers={"Accept": "application/rss+xml, application/xml, text/xml"})
         response.raise_for_status()
         root = ET.fromstring(response.content)

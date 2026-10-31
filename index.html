@@ -310,11 +310,11 @@ async function updateDistrictMap(state,district){initDistrictMap();if(!district)
 function showDistrictMarker(q,p){districtMap.setView([p.lat,p.lon],9);if(districtMarker)districtMarker.remove();districtMarker=L.marker([p.lat,p.lon]).addTo(districtMap).bindPopup("<strong>"+esc(q)+"</strong>").openPopup();$("mapMeta").textContent="📍 "+q+" · Matched place location; district boundary is not shown. © OpenStreetMap contributors";}
 
 async function refresh(){
- const state=$("state").value,district=$("district").value,fy=$("fy").value;
+ const state=$("state").value,district=$("district").value,fy=$("fy").value,commodityValue=$("commodity").value||"Wheat";
  updateDistrictMap(state,district);
  if(!district){$("status").textContent="Select a district to load data.";return;}
  const runId=++requestSequence;
- currentDashboard={selection:{state,district,fy,commodity},generated_at:new Date().toISOString().slice(0,10),sources:{},disclaimer:"Sources may cover different reporting years and geographic levels. State-level credit and national insurance statistics are not district-level figures."};
+ currentDashboard={selection:{state,district,fy,commodity:commodityValue},generated_at:new Date().toISOString().slice(0,10),sources:{},disclaimer:"Sources may cover different reporting years and geographic levels. State-level credit and national insurance statistics are not district-level figures."};
  $("refresh").disabled=true;
  $("status").textContent="Connecting to independent data sources. Panels will update as each source responds.";
  $("metrics").innerHTML=[metric("Agricultural credit disbursed","Loading…","Waiting for official credit table"),metric("Loans outstanding","Loading…","Waiting for official bank-group table"),metric("Agri-household income","Loading…","Waiting for published estimate"),metric("Historical precipitation","Loading…","Waiting for climate provider")].join("");
@@ -331,11 +331,11 @@ async function refresh(){
  let completed=0,failed=0;
  const updateProgress=()=>{
   if(runId!==requestSequence)return;
-  $("status").textContent=completed+" of "+jobs.length+" sources responded for "+state+" · "+district+" · "+commodity+" · FY "+fy+(completed<jobs.length?"; other sections remain interactive while remaining sources load.":". "+failed+" source(s) reported an error or unavailable data; review individual source notes below.");
+  $("status").textContent=completed+" of "+jobs.length+" sources responded for "+state+" · "+district+" · "+commodityValue+" · FY "+fy+(completed<jobs.length?"; other sections remain interactive while remaining sources load.":". "+failed+" source(s) reported an error or unavailable data; review individual source notes below.");
  };
  const tasks=jobs.map(async name=>{
   try{
-   const url="/api/source/"+encodeURIComponent(name)+"?state="+encodeURIComponent(state)+"&district="+encodeURIComponent(district)+"&fy="+encodeURIComponent(fy)+"&commodity="+encodeURIComponent(commodity);
+   const url="/api/source/"+encodeURIComponent(name)+"?state="+encodeURIComponent(state)+"&district="+encodeURIComponent(district)+"&fy="+encodeURIComponent(fy)+"&commodity="+encodeURIComponent(commodityValue);
    const r=await fetch(url,{headers:{"Accept":"application/json"}});
    if(!r.ok)throw new Error("API returned "+r.status);
    const payload=await r.json();

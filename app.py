@@ -466,7 +466,7 @@ def _ogd_mandi_daily_records(state: str, district: str, commodity: str):
             "api-key": api_key,
             "format": "json",
             "limit": 1000,
-            "filters[state.keyword]": state,
+            "filters[state]": state,
             "filters[district]": district,
             "filters[commodity]": term,
             "sort[arrival_date]": "desc",

@@ -121,25 +121,37 @@ function sourceBlock(s){
  } else if(src.includes("pmfby") && src.includes("official reference")){
   cards='<div class="scheme-grid">'+schemeCard("Programme","Crop insurance","Pradhan Mantri Fasal Bima Yojana")+schemeCard("Coverage basis","Notified crops and areas","Eligibility depends on notified season, area and policy conditions")+schemeCard("This reference provides","Scheme information only","Not a district-wise premium, insured-area or claims dataset")+'</div><div class="data-qualification">For selected-district premium and claims, use the official dashboard state/district/season report and record its exact filters and retrieval date.</div>';
  } else if(src.includes("agriculture credit")||src.includes("agricultural credit")){
-  const h=d.disbursement_history||[],latest=h.length?h[h.length-1]:null,groups=d.outstanding_by_bank_group||[];
+  const h=d.disbursement_history||[],selected=d.selected_fy_disbursement||h.find(x=>x.financial_year===d.selected_fy)||null,groups=d.outstanding_by_bank_group||[];
   const reported=groups.filter(x=>x.amount_crore!==null&&x.amount_crore!==undefined);
   const total=reported.length===3&&d.outstanding_total_is_complete?reported.reduce((a,x)=>a+Number(x.amount_crore),0):null;
   cards=compactCards([
-   latest?visualCard("₹","Latest published disbursement · "+latest.financial_year,"₹ "+fmt(latest.amount_crore," crore"),"State/UT aggregate for "+String(d.state||"selected state/UT")):"",
-   visualCard("🏦","Outstanding balance date",d.outstanding_as_of||"Date not supplied","Provisional bank-group balance"),
+   selected?visualCard("₹","Agricultural credit disbursed · "+selected.financial_year,"₹ "+fmt(selected.amount_crore," crore"),"Official state/UT aggregate; not district-level"):visualCard("₹","Agricultural credit disbursed · "+(d.selected_fy||"selected FY"),"Data not available for the selected FY","The linked official table does not report this year"),
+   visualCard("🏦","Outstanding balance date",d.outstanding_as_of||"Date not supplied","Provisional snapshot; not an FY disbursement figure"),
    visualCard("📍","Geographic scope","State / UT","The source does not report selected-district credit")
   ]);
-  if(groups.length)cards+='<div class="plot"><h3>Reported outstanding agricultural loans by bank group</h3><div class="visual-cards">'+groups.map(g=>visualCard("🏦",g.bank_group,g.amount_crore==null?"Not reported":"₹ "+fmt(g.amount_crore," crore"),g.amount_crore==null?"Official table shows no reported value":"As of "+(d.outstanding_as_of||"source date"))).join("")+'</div>'+(total!==null?'<p class="hint">Sum of all three reported bank-group values: ₹ '+fmt(total," crore")+'.</p>':'<p class="hint">A complete total is not shown because one or more bank groups are not reported.</p>')+'</div>';
+  if(groups.length)cards+='<div class="plot"><h3>Outstanding agricultural loans by bank group</h3><div class="visual-cards">'+groups.map(g=>visualCard("🏦",g.bank_group,g.amount_crore==null?"Not reported":"₹ "+fmt(g.amount_crore," crore"),g.amount_crore==null?"Official table shows no reported value":"As of "+(d.outstanding_as_of||"source date"))).join("")+'</div>'+(total!==null?'<p class="hint">Sum of all three reported bank-group values: ₹ '+fmt(total," crore")+'.</p>':'<p class="hint">A complete total is not shown because one or more bank groups are not reported.</p>')+'</div>';
  } else if(src.includes("agmarknet")||src.includes("mandi-price")){
-  const x=d.latest_available_record||((d.recent_records||[])[0])||null;
+  const daily=d.daily_records||[],history=d.recent_records||[];
+  const x=d.latest_daily_record||d.latest_available_record||daily[0]||history[0]||null;
   if(x)cards=compactCards([
-   visualCard("🌾","Commodity",x.commodity||d.commodity||"Wheat","Reported mandi observation"),
-   visualCard("📅","Observation date",x.date||"Not supplied","Source observation date, not page refresh date"),
-   visualCard("₹","Minimum price",x.minimum_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.minimum_price_rs_per_quintal,"/quintal"),"As reported by source"),
-   visualCard("₹","Modal price",x.modal_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.modal_price_rs_per_quintal,"/quintal"),"As reported by source"),
-   visualCard("₹","Maximum price",x.maximum_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.maximum_price_rs_per_quintal,"/quintal"),"As reported by source"),
-   visualCard("↕","Modal price movement",d.price_change_percent_latest_vs_oldest==null?"Not enough monthly points":fmt2(d.price_change_percent_latest_vs_oldest,"%"),d.price_change_start_date&&d.price_change_end_date?d.price_change_start_date+" → "+d.price_change_end_date:"Computed only from actual returned monthly modal prices")
+   visualCard("🌾","Selected commodity",x.commodity||d.commodity||"Selected crop",x.variety||"AGMARKNET record"),
+   visualCard("📍","Mandi / market",x.market||"Market not supplied",x.district||d.district||"Selected district"),
+   visualCard("📅","Latest observation",x.date||"Not supplied",daily.length?"Daily AGMARKNET record":"CEDA historical monthly observation"),
+   visualCard("₹","Minimum price",x.minimum_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.minimum_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal"),
+   visualCard("₹","Modal price",x.modal_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.modal_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal"),
+   visualCard("₹","Maximum price",x.maximum_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.maximum_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal")
   ]);
+  const tableRows=(daily.length?daily:history).slice(0,10);
+  if(tableRows.length){
+   const body=tableRows.map(r=>'<tr><td>'+esc(r.date||"—")+'</td><td>'+esc(r.market||"—")+'</td><td>'+esc(r.variety||"—")+'</td><td>'+esc(r.minimum_price_rs_per_quintal==null?"—":fmt(r.minimum_price_rs_per_quintal))+'</td><td>'+esc(r.modal_price_rs_per_quintal==null?"—":fmt(r.modal_price_rs_per_quintal))+'</td><td>'+esc(r.maximum_price_rs_per_quintal==null?"—":fmt(r.maximum_price_rs_per_quintal))+'</td></tr>').join("");
+   cards+='<div class="plot"><h3>'+(daily.length?"Latest daily mandi observations":"Historical selected-FY monthly price observations")+'</h3><table class="market-table"><thead><tr><th>Date</th><th>Market</th><th>Variety</th><th>Min ₹/q</th><th>Modal ₹/q</th><th>Max ₹/q</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+  }
+  if(d.selected_fy_available===false){
+   special+='<div class="fy-unavailable"><strong>Data not available for the selected FY ('+esc(d.selected_fy||"selected FY")+').</strong> Latest daily quotes, when available, are shown separately and must not be treated as historical prices for this FY.</div>';
+  }
+  if(!x&&!cards){
+   cards='<div class="empty-panel"><div class="empty-icon">🌾</div><div><strong>Data not available for the selected FY</strong><p>No verified mandi observations were returned for '+esc(d.commodity||"the selected crop")+' in '+esc(d.district||"the selected district")+'. No state-level price has been substituted.</p></div></div>';
+  }
  } else if(src.includes("weather")&&Object.keys(d).length){
   const wx=[["🌧️","Total precipitation",d.precipitation_total_mm==null?"Unavailable":fmt(d.precipitation_total_mm," mm")],["🌡️","Mean maximum temperature",d.max_temperature_mean_c==null?"Unavailable":fmt(d.max_temperature_mean_c," °C")],["🌡️","Mean minimum temperature",d.min_temperature_mean_c==null?"Unavailable":fmt(d.min_temperature_mean_c," °C")],["📅","Reference period",d.period_start&&d.period_end?d.period_start+" to "+d.period_end:"Not available"]];
   cards=compactCards(wx.map(x=>visualCard(x[0],x[1],x[2],"Weather-grid estimate for farm-risk context")));

@@ -286,6 +286,7 @@ def ceda_agri_market(state: str, district: str, fy: str, commodity: str = "Wheat
     commodity_aliases = {
         "wheat": ["wheat"],
         "rice": ["rice", "paddy", "dhan"],
+        "ricepaddy": ["rice", "paddy", "dhan"],
         "maize": ["maize", "corn", "makka"],
         "cotton": ["cotton", "kapas"],
         "onion": ["onion"],
@@ -316,11 +317,11 @@ def ceda_agri_market(state: str, district: str, fy: str, commodity: str = "Wheat
         state_id, district_id, resolved_district = _ceda_find_district(state, district)
         district_level = district_id is not None
         if not district_level:
-            # CEDA accepts district_id=0 for state-level aggregation. This is explicitly
-            # labelled as state-level data, never presented as a district observation.
-            state_id = state_ids[0]
-            district_id = 0
-            resolved_district = f"{state} state aggregate (district '{district}' not matched)"
+            return result(source, "no_matching_records",
+                          {"state":state,"district":district,"data_level":"district lookup unavailable",
+                           "financial_year":fy,"records_returned":0,"price_unit":"INR per quintal"},
+                          note=f"CEDA could not confidently map {district} within {state}. A state total is not substituted for a district price.",
+                          url=source_url)
 
         commodities = _items(cached("ceda:commodities", lambda: _ceda_request("commodities")))
         alias_norms = {_norm(x) for x in aliases}
@@ -577,6 +578,9 @@ def official_agriculture_credit(state: str, district: str, fy: str):
     reported = [x["amount_crore"] for x in groups if x["amount_crore"] is not None]
     data = {
         "state": state, "selected_district": district,
+        "selected_fy": fy,
+        "selected_fy_disbursement": next((row for row in history if row["financial_year"] == fy), None),
+        "selected_fy_data_available": any(row["financial_year"] == fy for row in history),
         "data_level": "State/UT aggregate; not district-specific",
         "disbursement_history": history, "top_states_disbursement": top, "all_states_disbursement": all_states,
         "outstanding_by_bank_group": groups,
@@ -740,7 +744,8 @@ def agricultural_household_income(state: str, district: str, fy: str):
                           {"state":state,"district":district,"top_districts":[{"district":r["district"],"monthly_income_rs":r["monthly_income_rs"]} for r in top]},
                           note="This report has no confidently matched model estimate for this district. Estimates are for July 2018–June 2019 and are not current farm profit.", url=AGRI_INCOME_SOURCE)
         data = {
-            "state": state, "district": selected["district"],
+            "state": state, "district": selected["district"], "selected_fy": fy,
+            "selected_fy_data_available": False,
             "monthly_income_rs": selected["monthly_income_rs"],
             "annualised_income_rs": round(selected["monthly_income_rs"] * 12, 2),
             "estimate_type": "Benchmark/final model-based agricultural household income",
@@ -888,6 +893,7 @@ def official_loan_recovery_gap(state: str, district: str, fy: str):
         "state": state, "selected_district": district,
         "data_level": "state-level cooperative-bank records; not district-level",
         "current_year_recovery_data": None,
+        "selected_fy": fy, "selected_fy_data_available": False,
         "records": records, "dccb_state_comparison": comparisons,
         "reference_period": "2017 historical data",
         "official_answer_date": "2018-01-02",
@@ -1208,6 +1214,8 @@ def official_agricultural_insurance(state: str, district: str, fy: str):
     return result(
         "PMFBY/RWBCIS agriculture crop-insurance coverage and claims", "available",
         {"state": state, "district": district, "data_level": data_level,
+         "selected_fy": fy, "selected_fy_data_available": False,
+         "period_is_five_year_cumulative": True,
          "reference_period": "2020-21 to 2024-25", "source_as_of": "2025-10-31",
          "state_summary": state_row, "district_record": district_data,
          "state_scheme_info": state_scheme_info,

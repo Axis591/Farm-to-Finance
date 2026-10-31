@@ -141,10 +141,15 @@ function sourceBlock(s){
    visualCard("₹","Modal price",(x.modal_price_rs_per_quintal===null||x.modal_price_rs_per_quintal===undefined)?"Not reported":"₹ "+fmt(x.modal_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal"),
    visualCard("₹","Maximum price",(x.maximum_price_rs_per_quintal===null||x.maximum_price_rs_per_quintal===undefined)?"Not reported":"₹ "+fmt(x.maximum_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal")
   ]);
-  const tableRows=(daily.length?daily:history).slice(0,10);
-  if(tableRows.length){
-   const body=tableRows.map(r=>'<tr><td>'+esc(r.date||"—")+'</td><td>'+esc(r.market||"—")+'</td><td>'+esc(r.variety||"—")+'</td><td>'+esc(r.minimum_price_rs_per_quintal==null?"—":fmt(r.minimum_price_rs_per_quintal))+'</td><td>'+esc(r.modal_price_rs_per_quintal==null?"—":fmt(r.modal_price_rs_per_quintal))+'</td><td>'+esc(r.maximum_price_rs_per_quintal==null?"—":fmt(r.maximum_price_rs_per_quintal))+'</td></tr>').join("");
-   cards+='<div class="plot"><h3>'+(daily.length?"Latest daily mandi observations":"Historical selected-FY monthly price observations")+'</h3><table class="market-table"><thead><tr><th>Date</th><th>Market</th><th>Variety</th><th>Min ₹/q</th><th>Modal ₹/q</th><th>Max ₹/q</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+  const buildMarketTable=(rows,title,subtitle)=>{
+   if(!rows||!rows.length)return "";
+   const body=rows.slice(0,10).map(r=>'<tr><td>'+esc(r.date||"—")+'</td><td>'+esc(r.market||"—")+'</td><td>'+esc(r.variety||"—")+'</td><td>'+esc(r.minimum_price_rs_per_quintal==null?"—":fmt(r.minimum_price_rs_per_quintal))+'</td><td>'+esc(r.modal_price_rs_per_quintal==null?"—":fmt(r.modal_price_rs_per_quintal))+'</td><td>'+esc(r.maximum_price_rs_per_quintal==null?"—":fmt(r.maximum_price_rs_per_quintal))+'</td></tr>').join("");
+   return '<div class="plot"><h3>'+esc(title)+'</h3><p class="hint">'+esc(subtitle)+'</p><table class="market-table"><thead><tr><th>Date</th><th>Market</th><th>Variety</th><th>Min ₹/q</th><th>Modal ₹/q</th><th>Max ₹/q</th></tr></thead><tbody>'+body+'</tbody></table></div>';
+  };
+  if(daily.length)cards+=buildMarketTable(daily,"Latest daily mandi observations","Official daily AGMARKNET quotations. These are the latest dated observations, separate from the selected FY.");
+  if(history.length)cards+=buildMarketTable(history,"Historical mandi observations · "+(d.selected_fy||"selected FY"),"CEDA/AGMARKNET historical monthly series for the selected financial year. Values are ₹ per quintal.");
+  if(d.price_change_percent_latest_vs_oldest!==null&&d.price_change_percent_latest_vs_oldest!==undefined){
+   cards+=visualCard("↕","Selected-FY modal-price movement",fmt2(d.price_change_percent_latest_vs_oldest,"%"),(d.price_change_start_date||"")+" → "+(d.price_change_end_date||""));
   }
   if(s.note&&s.note.includes("DATA_GOV_IN_API_KEY")){
    special+='<div class="data-qualification">Daily Government AGMARKNET quotations are not configured yet. Add your private <strong>DATA_GOV_IN_API_KEY</strong> in Render → Farm-to-Finance-3 → Environment, then redeploy. Historical CEDA prices remain separate where available. Do not paste the key into this dashboard or a public message.</div>';

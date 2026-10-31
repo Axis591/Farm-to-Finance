@@ -196,6 +196,21 @@ async function loadStates(){let r=await fetch("/api/states");let j=await r.json(
 function fillFY(){const now=new Date();const y=now.getFullYear();const currentFY=now.getMonth()>=3?y:y-1;const opts=[];for(let start=2014;start<=currentFY;start++)opts.push(`${start}-${String(start+1).slice(-2)}`);$("fy").innerHTML=opts.map(x=>`<option>${x}</option>`).join("");const preferredStart=Math.max(2014,currentFY-2);$("fy").value=opts.includes(`${preferredStart}-${String(preferredStart+1).slice(-2)}`)?`${preferredStart}-${String(preferredStart+1).slice(-2)}`:opts[opts.length-1];}
 function loadDistrictSuggestions(){const state=$("state").value;let list=DISTRICT_DIRECTORY[state]||[];if(state==="Dadra and Nagar Haveli and Daman and Diu"){list=[...(DISTRICT_DIRECTORY["Dadra and Nagar Haveli"]||[]),...(DISTRICT_DIRECTORY["Daman and Diu"]||[])].sort((a,b)=>a.localeCompare(b));}const preferred={"West Bengal":"Pashchim Medinipur","Rajasthan":"Jaipur","Maharashtra":"Pune","Gujarat":"Ahmadabad","Delhi":"New Delhi","Andhra Pradesh":"Anantapur","Telangana":"Warangal"};const p=preferred[state];$("district").innerHTML=`<option value="">Select district</option>`+list.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join("");if(p&&list.some(d=>d.toLowerCase()===p.toLowerCase()))$("district").value=list.find(d=>d.toLowerCase()===p.toLowerCase());else if(list.length)$("district").value=list[0];$("districtHint").textContent=list.length+" districts available for "+state+". "+DISTRICT_ATTRIBUTION;}
 function metric(label,value,sub){return `<div class="metric"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div><div class="s">${esc(sub||"")}</div></div>`}
+function updateFYNotice(j){
+ const box=$("fyNotice");if(!box)return;
+ const fy=j.selection.fy,s=j.sources||{},missing=[];
+ const credit=(s.agri_credit||{}).data||{},market=(s.agriculture||{}).data||{},insurance=(s.insurance||{}).data||{},income=(s.farm_income||{}).data||{},recovery=(s.loan_recovery||{}).data||{},climate=s.climate||{};
+ if(s.agri_credit&&!(credit.selected_fy_disbursement||(credit.disbursement_history||[]).some(x=>x.financial_year===fy)))missing.push("Agricultural credit: the official state/UT table has no disbursement row for "+fy+".");
+ if(s.agriculture&&market.selected_fy_available===false)missing.push("Mandi prices: no historical price observations were returned for "+fy+" and this selected crop/district. Latest daily quotes, when present, are shown separately.");
+ if(s.climate&&(climate.status==="unavailable"||climate.status==="error"))missing.push("Farm weather: no usable historical weather record was returned for "+fy+".");
+ if(s.farm_income&&income.selected_fy_data_available===false)missing.push("Farm-household income: the published model is for July 2018–June 2019, not a year-by-year FY series.");
+ if(s.insurance&&insurance.period_is_five_year_cumulative)missing.push("Crop insurance: the official selected-geography values are cumulative for FY 2020–21 to FY 2024–25; an individual FY split is not published in this source.");
+ if(s.loan_recovery&&recovery.selected_fy_data_available===false)missing.push("Loan recovery: the linked cooperative-bank recovery records are historical 2017 figures, not a selected-FY repayment series.");
+ if(!missing.length){box.hidden=true;box.textContent="";return;}
+ box.hidden=false;
+ box.innerHTML='<strong>Data not available for the selected FY — FY '+esc(fy)+'</strong><div>Some connected agriculture sources do not publish a year-specific value for this selection:</div><ul>'+missing.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>';
+}
+
 const PANEL_FALLBACKS={
   climate:{icon:"🌦️",title:"Climate data not returned",body:"The climate provider did not return a usable observation for this selection. Refresh to retry; no rainfall or temperature value is being guessed."},
   imd:{icon:"⚠️",title:"Live warning feed needs review",body:'A district match may not be available from the feed. This does not mean there is no warning. Check the <a href="https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php" target="_blank" rel="noopener">official IMD district warning map ↗</a>.'},
@@ -284,14 +299,15 @@ $("income").innerHTML=sourceBlock(s.farm_income);
 function render(j){
 if(!j||!j.sources||typeof j.sources!=="object"||!Object.keys(j.sources).length)throw new Error("The data API returned no source records. Check deployment and /api/health.");
 const s=j.sources||{},cl=(s.climate||{}).data||{},cr=(s.agri_credit||{}).data||{},inc=(s.farm_income||{}).data||{};
-const latestDisb=cr.disbursement_history&&cr.disbursement_history.slice(-1)[0];
+const selectedDisb=cr.selected_fy_disbursement||(cr.disbursement_history||[]).find(x=>x.financial_year===j.selection.fy);
 const outstanding=(cr.outstanding_by_bank_group||[]).reduce((acc,x)=>acc+(Number(x.amount_crore)||0),0);
-const estimate=inc.selected_estimate&&inc.selected_estimate.monthly_income_rs;
+const marketData=(s.agriculture||{}).data||{};
+const latestMarket=marketData.latest_daily_record||marketData.latest_available_record||((marketData.daily_records||marketData.recent_records||[])[0])||null;
 $("metrics").innerHTML=[
-metric("Agriculture credit disbursed (FY 2024–25)",latestDisb?prettyMoney(latestDisb.amount_crore):"Not available",latestDisb?latestDisb.financial_year+" · selected state/UT":"State/UT credit series unavailable"),
-metric("Loans outstanding (31 Dec 2025)",cr.outstanding_total_is_complete?prettyMoney(outstanding):"Incomplete official total",cr.outstanding_total_is_complete?"Provisional bank-group total; selected state/UT":"One or more bank groups are not reported for this state/UT"),
-metric("Farm-household income benchmark",estimate!==undefined&&estimate!==null?prettyMoney(estimate," / month"):"Not available","Historical agricultural-household model; includes non-farm earnings"),
-metric("Farm weather · historical rainfall",cl.precipitation_total_mm==null?"Unavailable":fmt(cl.precipitation_total_mm," mm"),cl.period_start&&cl.period_end?cl.period_start+" to "+cl.period_end:"Weather source not available")
+metric("Agriculture credit disbursed ("+j.selection.fy+")",selectedDisb?prettyMoney(selectedDisb.amount_crore):"Data not available for the selected FY",selectedDisb?"Official state/UT figure · not district-level":"The official table does not report this selected FY"),
+metric("Loans outstanding · 31 Dec 2025",cr.outstanding_total_is_complete?prettyMoney(outstanding):"Incomplete official total",cr.outstanding_total_is_complete?"Provisional snapshot for "+j.selection.state+" · state/UT scope":"One or more bank groups are not reported"),
+metric("Selected crop · latest mandi modal price",latestMarket&&latestMarket.modal_price_rs_per_quintal!==null?"₹ "+fmt(latestMarket.modal_price_rs_per_quintal," / quintal"):"Not available",latestMarket?(latestMarket.market||latestMarket.date||"Latest available observation")+" · "+(latestMarket.date||"date not supplied"):"No exact selected-district quote returned"),
+metric("Farm weather · selected FY rainfall",cl.precipitation_total_mm==null?"Data not available for the selected FY":fmt(cl.precipitation_total_mm," mm"),cl.period_start&&cl.period_end?cl.period_start+" to "+cl.period_end:"Weather archive has no selected-FY value")
 ].join("");
 $("climate").innerHTML=sourceBlock(s.climate);
 $("imd").innerHTML=sourceBlock(s.imd_current)+'<p class="hint">Official IMD live district-warning map: <a target="_blank" rel="noopener" href="https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php">open district warning map ↗</a>. Use the official map link to view the live colour-coded district forecast.</p>';
@@ -301,6 +317,7 @@ $("sources").innerHTML=Object.entries(SOURCE_NAMES).map(([key,label])=>s[key]?so
 renderAnalytics(j);
 $("pipeline").innerHTML='<p>Selected: <strong>'+esc(j.selection.state)+', '+esc(j.selection.district)+', FY '+esc(j.selection.fy)+'</strong></p><p class="hint">Only official reported data and transparently labeled model estimates are plotted. District loan disbursement, loan recovery, gross agricultural revenue and farm profit are not inferred from state totals.</p>';
 ensurePanelContents();
+updateFYNotice(j);
 $("disclaimer").textContent=(j.disclaimer||"")+" "+DISTRICT_ATTRIBUTION;
 $("status").textContent="Showing "+j.selection.state+" · "+j.selection.district+" · "+(j.selection.commodity||"Wheat")+" · FY "+j.selection.fy+". Generated "+j.generated_at+". Data years vary by source and are disclosed in each chart.";
 }

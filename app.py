@@ -426,6 +426,128 @@ def ceda_agri_market(state: str, district: str, fy: str, commodity: str = "Wheat
         return result(source, "error", note=f"Could not read the CEDA API response ({type(e).__name__}). No substitute values were generated.", url=source_url)
 
 
+
+def _parse_agmarknet_date(value):
+    if not value:
+        return None
+    raw = str(value).strip()
+    for date_format in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(raw[:10], date_format).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _ogd_mandi_daily_records(state: str, district: str, commodity: str):
+    """Read daily mandi records from the official data.gov.in AGMARKNET resource."""
+    api_key = os.getenv("DATA_GOV_IN_API_KEY", "").strip()
+    if not api_key:
+        return []
+    crop_aliases = {
+        "wheat": ["Wheat"],
+        "rice": ["Rice", "Paddy", "Dhan"],
+        "ricepaddy": ["Rice", "Paddy", "Dhan"],
+        "maize": ["Maize", "Corn"],
+        "cotton": ["Cotton", "Kapas"],
+        "onion": ["Onion"],
+        "potato": ["Potato"],
+        "tomato": ["Tomato"],
+        "soybean": ["Soybean", "Soyabean"],
+        "groundnut": ["Groundnut", "Peanut"],
+        "mustard": ["Mustard", "Rapeseed"],
+    }
+    terms = crop_aliases.get(_norm(commodity), [commodity])
+    resource_id = "9ef84268-d588-465a-a308-a864a43d0070"
+    url = "https://api.data.gov.in/resource/" + resource_id
+    records_by_key = {}
+    for term in terms:
+        params = {
+            "api-key": api_key,
+            "format": "json",
+            "limit": 1000,
+            "filters[state.keyword]": state,
+            "filters[district]": district,
+            "filters[commodity]": term,
+            "sort[arrival_date]": "desc",
+        }
+        try:
+            response = HTTP.get(url, params=params, timeout=25)
+            response.raise_for_status()
+            payload = response.json()
+        except requests.exceptions.RequestException:
+            logging.exception("data.gov.in mandi request failed for %s", term)
+            continue
+        for row in payload.get("records", []) if isinstance(payload, dict) else []:
+            if not isinstance(row, dict):
+                continue
+            row_state = _field(row, "state", "State")
+            row_district = _field(row, "district", "District")
+            row_commodity = _field(row, "commodity", "Commodity")
+            if _norm(row_state) != _norm(state) or _norm(row_district) != _norm(district):
+                continue
+            if _norm(row_commodity) not in {_norm(x) for x in terms}:
+                continue
+            observed = _parse_agmarknet_date(_field(row, "arrival_date", "Arrival_Date", "date"))
+            if not observed:
+                continue
+            normalized = {
+                "date": observed.isoformat(),
+                "state": row_state,
+                "district": row_district,
+                "market": _field(row, "market", "Market"),
+                "commodity": row_commodity,
+                "variety": _field(row, "variety", "Variety"),
+                "grade": _field(row, "grade", "Grade"),
+                "minimum_price_rs_per_quintal": _field(row, "min_price", "Min_Price", "min price"),
+                "maximum_price_rs_per_quintal": _field(row, "max_price", "Max_Price", "max price"),
+                "modal_price_rs_per_quintal": _field(row, "modal_price", "Modal_Price", "modal price"),
+                "price_source": "data.gov.in / AGMARKNET",
+            }
+            market_key = (normalized["date"], _norm(str(normalized["market"])), _norm(str(row_commodity)))
+            records_by_key[market_key] = normalized
+    return sorted(records_by_key.values(), key=lambda row: row["date"], reverse=True)
+
+
+def agriculture_market_source(state: str, district: str, fy: str, commodity: str = "Wheat"):
+    """Combine selected-FY historical mandi series with latest official daily district quotes."""
+    historical = ceda_agri_market(state, district, fy, commodity)
+    try:
+        daily_records = _ogd_mandi_daily_records(state, district, commodity)
+    except Exception:
+        logging.exception("Daily AGMARKNET feed failed")
+        daily_records = []
+    data = dict(historical.get("data") or {})
+    fy_records = data.get("recent_records") or []
+    data["daily_records"] = daily_records[:50]
+    data["latest_daily_record"] = daily_records[0] if daily_records else None
+    data["daily_feed_source"] = "Government of India Open Government Data (AGMARKNET)" if daily_records else None
+    data["daily_feed_last_observation"] = daily_records[0]["date"] if daily_records else None
+    data["selected_fy"] = fy
+    data["selected_fy_available"] = bool(fy_records)
+    data["selected_fy_data_note"] = (
+        "Historical monthly observations were returned for the selected FY."
+        if fy_records else
+        "Data not available for the selected FY from the returned monthly mandi series."
+    )
+    status = historical.get("status", "unavailable")
+    if daily_records and status in ("unavailable", "error", "no_matching_records"):
+        status = "available"
+    note = historical.get("note") or "No selected-FY mandi price series was returned."
+    if daily_records:
+        note += " Latest daily official mandi observation for this exact state, district and crop: " + daily_records[0]["date"] + ". AGMARKNET is updated on a daily reporting cycle, not continuously intraday."
+    elif not os.getenv("DATA_GOV_IN_API_KEY", "").strip():
+        note += " Daily data.gov.in quotes are not configured: add DATA_GOV_IN_API_KEY to the Render environment. The historical CEDA series remains available where returned."
+    return result(
+        "AGMARKNET mandi prices (CEDA historical + data.gov.in daily)",
+        status,
+        data,
+        updated=(daily_records[0]["date"] if daily_records else historical.get("updated_at")),
+        note=note,
+        url="https://data.gov.in/resource/current-daily-price-various-commodities-various-markets-mandi",
+    )
+
+
 def ogd_resource(resource_id: str, state: str, district: str, fy: str, label: str):
     key=os.getenv("DATA_GOV_IN_API_KEY","").strip()
     resource_id=(resource_id or "").strip()
@@ -1236,7 +1358,7 @@ def dashboard_source(name: str, state: str, district: str, fy: str, commodity: s
         return official_agricultural_insurance(state,district,fy)
     jobs = {
         "climate": lambda: open_meteo_climate(state,district,fy),
-        "agriculture": lambda: ceda_agri_market(state,district,fy,commodity),
+        "agriculture": lambda: agriculture_market_source(state,district,fy,commodity),
         "agri_credit": lambda: official_agriculture_credit(state,district,fy),
         "farm_income": lambda: agricultural_household_income(state,district,fy),
         "loan_recovery": lambda: official_loan_recovery_gap(state,district,fy),
@@ -1272,7 +1394,7 @@ def dashboard(state: str, district: str, fy: str, commodity: str = "Wheat"):
 
         jobs = [
             ("climate", lambda: open_meteo_climate(state,district,fy), "Open-Meteo historical weather"),
-            ("agriculture", lambda: ceda_agri_market(state,district,fy,commodity), "Agricultural market prices (AGMARKNET)"),
+            ("agriculture", lambda: agriculture_market_source(state,district,fy,commodity), "Agricultural market prices (AGMARKNET)"),
             ("agri_credit", lambda: official_agriculture_credit(state,district,fy), "Official agricultural credit"),
             ("farm_income", lambda: agricultural_household_income(state,district,fy), "Agricultural household income"),
             ("loan_recovery", lambda: official_loan_recovery_gap(state,district,fy), "Loan recovery"),
@@ -1295,7 +1417,8 @@ def dashboard(state: str, district: str, fy: str, commodity: str = "Wheat"):
 
 @app.get("/api/config")
 def config():
-    return {"agmarknet_price_source":"CEDA/AGMARKNET integration",
+    return {"agmarknet_price_source":"AGMARKNET daily data.gov.in + CEDA historical series",
+            "mandi_daily_api_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip()),
             "official_agriculture_credit_available":True,
             "pm_kisan_scheme_reference_available":True,
             "pmfby_kharif_snapshot_available":True,

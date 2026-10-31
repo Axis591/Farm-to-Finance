@@ -3,6 +3,7 @@ services:
     name: farm-to-finance-dashboard
     runtime: docker
     plan: starter
+    autoDeploy: true
     healthCheckPath: /api/health
     envVars:
       - key: DATA_GOV_IN_API_KEY

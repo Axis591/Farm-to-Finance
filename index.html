@@ -1,10 +1,11 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#164b38"><meta name="description" content="Farm to Finance — India agriculture research dashboard for district weather, mandi prices, crop insurance and agricultural credit, with transparent source dates and geographic scope.">
 <title>Farm to Finance | Agricultural Intelligence Dashboard</title>
+<link rel="preconnect" href="https://unpkg.com"><link rel="preconnect" href="https://tile.openstreetmap.org"><link rel="preconnect" href="https://nominatim.openstreetmap.org"><link rel="preconnect" href="https://archive-api.open-meteo.com"><link rel="preconnect" href="https://api.data.gov.in">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
 <style>
 :root{--ink:#17342b;--muted:#61746b;--line:#dce7df;--paper:#f2f6f1;--green:#176b4d;--mint:#e5f4eb;--amber:#fff4d8;--red:#fde8e6;--white:#fff;--forest:#103b2d}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:18px}body{margin:0;background:radial-gradient(ellipse at 10% 5%,rgba(232,183,77,.24),transparent 27%),radial-gradient(ellipse at 90% 18%,rgba(82,158,111,.22),transparent 30%),radial-gradient(ellipse at 72% 86%,rgba(107,151,191,.15),transparent 32%),linear-gradient(135deg,rgba(244,250,241,.90) 0%,rgba(250,247,232,.90) 48%,rgba(236,246,239,.93) 100%),url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=2000&q=85') center/cover fixed;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--ink)}
@@ -19,6 +20,77 @@ label{font-size:12px;font-weight:700;color:#43554d;display:block;margin-bottom:7
 .sections{display:grid;grid-template-columns:1fr 1fr;gap:14px}.charts-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.plot{border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0;background:#fff}.plot h3{margin:0 0 8px;font-size:14px}.plot .plot-note{font-size:11px;line-height:1.5;color:var(--muted);margin:8px 0 0}.plot svg{width:100%;height:auto;display:block;overflow:visible}.imd-embed{width:100%;height:520px;border:1px solid var(--line);border-radius:10px;margin-top:12px;background:#fff}.district-map{height:390px;width:100%;border-radius:12px;border:1px solid var(--line);overflow:hidden;background:#edf3ee}.map-meta{font-size:12px;color:var(--muted);margin:8px 0 0}.visual-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:10px;margin:12px 0}.visual-stat{border:1px solid var(--line);border-radius:12px;background:linear-gradient(150deg,#fbfdfb,#f1f7f2);padding:13px;min-width:0;min-height:104px;overflow-wrap:anywhere}.visual-stat .ico{font-size:22px;line-height:1.3}.visual-stat .label{font-size:11px;line-height:1.4;color:var(--muted);margin-top:5px}.visual-stat .value{font-size:16px;line-height:1.35;font-weight:760;margin-top:5px;overflow-wrap:anywhere;word-break:normal}.visual-stat .subvalue{font-size:11px;line-height:1.45;color:var(--muted);margin-top:5px}.source-data-scope{display:inline-flex;align-items:center;gap:6px;margin:4px 0 8px;padding:5px 8px;border-radius:8px;background:#edf5ef;color:#305a43;font-size:11px;font-weight:700}.scheme-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:10px;margin-top:12px}.scheme-card{padding:14px;border:1px solid #dce7df;border-radius:12px;background:#f7faf7;min-width:0}.scheme-card .scheme-label{font-size:11px;color:var(--muted);margin-bottom:5px}.scheme-card .scheme-value{font-size:17px;font-weight:780;line-height:1.35;overflow-wrap:anywhere}.scheme-card .scheme-note{font-size:11px;color:var(--muted);line-height:1.45;margin-top:5px}.data-qualification{border-left:3px solid #c2d8c7;padding:8px 11px;margin-top:10px;background:#f5f9f5;color:#52685c;font-size:11px;line-height:1.5}.source-details{margin-top:12px}.source-details{margin-top:10px}.source-details summary{cursor:pointer;color:var(--green);font-size:12px;font-weight:700}.alert-item{padding:10px 12px;border-radius:10px;background:#fff7e5;border:1px solid #f1dfb4;margin:8px 0}.alert-item .alert-title{font-weight:750}.donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}.donut-legend{font-size:12px;display:grid;gap:7px}.legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}.plot .empty{padding:12px;border-radius:9px;background:#f7faf7;color:var(--muted);font-size:12px;line-height:1.5}.metric .v.small{font-size:16px}.card h2{font-size:17px;margin:0 0 12px;letter-spacing:-.015em}.empty-panel{display:flex;gap:12px;align-items:flex-start;padding:13px 14px;border-radius:12px;background:linear-gradient(135deg,#f5f9f5,#eef5ef);border:1px solid #dbe9de;color:#40594c;font-size:13px;line-height:1.55}.empty-panel .empty-icon{font-size:20px;line-height:1.3}.empty-panel strong{display:block;color:#203d30;font-size:13px;margin-bottom:3px}.empty-panel a{color:#176b4d;font-weight:700}.empty-panel p{margin:2px 0}.card:empty{min-height:90px}.source{border-top:1px solid var(--line);padding:12px 0}.source:first-of-type{border-top:0}.source-head{display:flex;gap:8px;align-items:center;justify-content:space-between}.pill{font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:5px 7px;border-radius:999px;background:#eef1ef;color:#58655e;white-space:nowrap}.pill.available{background:var(--mint);color:#176b4d}.pill.error,.pill.unavailable{background:var(--red);color:#9a302a}.pill.not_configured,.pill.no_matching_records{background:var(--amber);color:#815d0b}.pill.reference_available{background:#eaf0ff;color:#2f5783}.pill.loading{background:#e8f0ea;color:#567060}.source p{font-size:12px;color:var(--muted);line-height:1.5;margin:7px 0}.source a{font-size:12px;color:var(--green)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:240px;overflow:auto;background:#f7faf7;padding:10px;border-radius:8px}.wide{grid-column:1/-1}.foot{font-size:12px;color:var(--muted);line-height:1.6;margin-top:16px}
 .sidebar{position:fixed;left:0;top:0;bottom:0;width:226px;background:linear-gradient(165deg,#10392c 0%,#0e3328 62%,#174b37 100%);color:#fff;padding:22px 13px;z-index:1000;overflow-y:auto;box-shadow:3px 0 14px #102c2014}.sidebar-brand{font-weight:800;font-size:17px;padding:0 10px 18px;border-bottom:1px solid #ffffff2a;margin-bottom:14px}.sidebar-brand small{display:block;font-weight:400;color:#c9e0d2;font-size:10px;letter-spacing:.1em;text-transform:uppercase;margin-top:5px}.sidebar a{display:flex;gap:9px;align-items:center;color:#e4f1e9;text-decoration:none;font-size:13px;padding:11px 10px;border-radius:9px;margin:3px 0}.sidebar a:hover,.sidebar a:focus{background:#235542;color:#fff;outline:none}.sidebar a:focus-visible{box-shadow:0 0 0 2px #b8d7bf inset}.sidebar a[href]:active{background:#2c6249}.sidebar .nav-section{font-size:10px;color:#a9cbb7;text-transform:uppercase;letter-spacing:.12em;padding:16px 10px 5px}.sidebar .nav-note{font-size:10px;line-height:1.5;color:#bcd3c4;padding:16px 10px}.card{scroll-margin-top:18px}.card:target{outline:2px solid #8ab9a0}.map-card{scroll-margin-top:18px}
 @media(max-width:900px){.sidebar{position:relative;width:100%;height:auto;bottom:auto;display:flex;flex-wrap:wrap;align-items:center;padding:10px;gap:3px}.sidebar-brand{width:100%;padding:6px 8px 10px;margin:0}.sidebar .nav-section,.sidebar .nav-note{display:none}.sidebar a{font-size:12px;padding:8px}.sidebar a span{display:none}header{padding:22px 18px}main{margin:16px 10px;padding:0 8px 35px}.controls{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr 1fr}.sections{grid-template-columns:1fr}.charts-grid{grid-template-columns:1fr}}@media(max-width:480px){.controls{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.metric .v{font-size:20px}.sidebar a{font-size:11px;padding:7px}}
+
+/* Farm to Finance visual system — illustrated landscape, subtle depth and accessible contrast. */
+body{
+ background-color:#edf5ec;
+ background-image:
+  linear-gradient(115deg,rgba(247,250,242,.76) 0%,rgba(250,248,235,.69) 48%,rgba(237,247,239,.72) 100%),
+  url('/static/farm-landscape.svg');
+ background-position:center top;
+ background-size:cover;
+ background-attachment:fixed;
+}
+header:before{
+ background:
+  linear-gradient(90deg,rgba(9,47,34,.95) 0%,rgba(13,57,39,.82) 43%,rgba(17,62,43,.46) 100%),
+  url('/static/farm-landscape.svg') center 42%/cover no-repeat;
+ transform:none;
+}
+header{border-bottom:1px solid rgba(218,232,202,.45)}
+.controls{
+ position:relative;
+ border:1px solid rgba(191,215,190,.85);
+ box-shadow:0 12px 30px rgba(26,71,46,.09);
+}
+.controls select:focus-visible,button:focus-visible,.sidebar a:focus-visible{
+ outline:3px solid #e6bf62;outline-offset:2px;
+}
+button{transition:transform .16s ease,box-shadow .16s ease,background .16s ease}
+button:hover:not(:disabled){background:#1c7855;box-shadow:0 6px 16px rgba(20,93,61,.2);transform:translateY(-1px)}
+.metric,.card,.controls{backdrop-filter:blur(10px)}
+.metric{background:rgba(255,255,255,.91);box-shadow:0 5px 18px rgba(26,71,46,.045)}
+.card{background:rgba(255,255,255,.94);box-shadow:0 8px 25px rgba(29,76,48,.06)}
+.plot{background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(243,249,239,.94));}
+.district-map{box-shadow:inset 0 0 0 1px rgba(255,255,255,.7)}
+.sidebar{background:linear-gradient(165deg,#0d3b2d 0%,#164b38 52%,#245a3e 100%);border-right:1px solid rgba(255,255,255,.11)}
+.sidebar-brand{letter-spacing:-.02em}
+.sidebar a{transition:background .15s ease,transform .15s ease}
+.sidebar a:hover{transform:translateX(2px)}
+.source{padding:14px 0}
+.source-details pre{max-height:220px}
+.market-table{display:block;overflow-x:auto;white-space:nowrap}
+.market-table th,.market-table td{min-width:84px}
+#status{line-height:1.5}
+@media(max-width:900px){
+ .sidebar{position:sticky;top:0;z-index:1100;width:100%;height:auto;bottom:auto;display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;align-items:center;gap:4px;padding:8px 10px;scrollbar-width:thin}
+ .sidebar-brand{width:auto;flex:0 0 auto;padding:4px 12px 4px 4px;margin:0 5px 0 0;border:0;border-right:1px solid rgba(255,255,255,.25);font-size:14px}
+ .sidebar-brand small{font-size:8px}
+ .sidebar .nav-section,.sidebar .nav-note{display:none}
+ .sidebar a{flex:0 0 auto;white-space:nowrap;font-size:11px;padding:8px 10px;margin:0}
+ .sidebar a span{display:inline}
+ header{padding:25px 22px;min-height:145px}
+ main{margin:15px 12px;padding:0 8px 32px;max-width:none}
+}
+@media(max-width:640px){
+ body{background-attachment:scroll}
+ header{padding:22px 16px;min-height:130px}
+ header p{font-size:12px;line-height:1.5}
+ .controls{gap:9px;padding:14px}
+ .grid{gap:9px}
+ .metric{padding:12px;min-height:112px}
+ .metric .v{font-size:19px}
+ .sections,.charts-grid{gap:10px}
+ .card{padding:14px}
+ .district-map{height:300px}
+ .sidebar-brand{display:none}
+ .sidebar a{font-size:10px;padding:8px}
+ .visual-cards,.scheme-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(prefers-reduced-motion:reduce){
+ html{scroll-behavior:auto}
+ *,*::before,*::after{transition:none!important;animation:none!important}
+}
 </style>
 </head>
 <body>

@@ -137,9 +137,9 @@ function sourceBlock(s){
    visualCard("🌾","Selected commodity",x.commodity||d.commodity||"Selected crop",x.variety||"AGMARKNET record"),
    visualCard("📍","Mandi / market",x.market||"Market not supplied",x.district||d.district||"Selected district"),
    visualCard("📅","Latest observation",x.date||"Not supplied",daily.length?"Daily AGMARKNET record":"CEDA historical monthly observation"),
-   visualCard("₹","Minimum price",x.minimum_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.minimum_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal"),
-   visualCard("₹","Modal price",x.modal_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.modal_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal"),
-   visualCard("₹","Maximum price",x.maximum_price_rs_per_quintal==null?"Not reported":"₹ "+fmt(x.maximum_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal")
+   visualCard("₹","Minimum price",(x.minimum_price_rs_per_quintal===null||x.minimum_price_rs_per_quintal===undefined)?"Not reported":"₹ "+fmt(x.minimum_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal"),
+   visualCard("₹","Modal price",(x.modal_price_rs_per_quintal===null||x.modal_price_rs_per_quintal===undefined)?"Not reported":"₹ "+fmt(x.modal_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal"),
+   visualCard("₹","Maximum price",(x.maximum_price_rs_per_quintal===null||x.maximum_price_rs_per_quintal===undefined)?"Not reported":"₹ "+fmt(x.maximum_price_rs_per_quintal,"/quintal"),"Wholesale price · ₹ per quintal")
   ]);
   const tableRows=(daily.length?daily:history).slice(0,10);
   if(tableRows.length){
@@ -320,7 +320,7 @@ const latestMarket=marketData.latest_daily_record||marketData.latest_available_r
 $("metrics").innerHTML=[
 metric("Agriculture credit disbursed ("+j.selection.fy+")",selectedDisb?prettyMoney(selectedDisb.amount_crore):"Data not available for the selected FY",selectedDisb?"Official state/UT figure · not district-level":"The official table does not report this selected FY"),
 metric("Loans outstanding · 31 Dec 2025",cr.outstanding_total_is_complete?prettyMoney(outstanding):"Incomplete official total",cr.outstanding_total_is_complete?"Provisional snapshot for "+j.selection.state+" · state/UT scope":"One or more bank groups are not reported"),
-metric("Selected crop · latest mandi modal price",latestMarket&&latestMarket.modal_price_rs_per_quintal!==null?"₹ "+fmt(latestMarket.modal_price_rs_per_quintal," / quintal"):"Not available",latestMarket?(latestMarket.market||latestMarket.date||"Latest available observation")+" · "+(latestMarket.date||"date not supplied"):"No exact selected-district quote returned"),
+metric("Selected crop · latest mandi modal price",latestMarket&&latestMarket.modal_price_rs_per_quintal!==null&&latestMarket.modal_price_rs_per_quintal!==undefined?"₹ "+fmt(latestMarket.modal_price_rs_per_quintal," / quintal"):"Not available",latestMarket?(latestMarket.market||latestMarket.date||"Latest available observation")+" · "+(latestMarket.date||"date not supplied"):"No exact selected-district quote returned"),
 metric("Farm weather · selected FY rainfall",cl.precipitation_total_mm==null?"Data not available for the selected FY":fmt(cl.precipitation_total_mm," mm"),cl.period_start&&cl.period_end?cl.period_start+" to "+cl.period_end:"Weather archive has no selected-FY value")
 ].join("");
 $("climate").innerHTML=sourceBlock(s.climate);

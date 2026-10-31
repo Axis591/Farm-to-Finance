@@ -7,6 +7,8 @@ from typing import Optional
 from io import BytesIO
 import xml.etree.ElementTree as ET
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,7 +36,17 @@ def http_session():
     session = getattr(HTTP_LOCAL, "session", None)
     if session is None:
         session = requests.Session()
-        session.headers.update({"User-Agent": HTTP_USER_AGENT})
+        session.headers.update({"User-Agent": HTTP_USER_AGENT, "Accept": "application/json"})
+        retry = Retry(
+            total=2, connect=2, read=1, status=2,
+            backoff_factor=0.3,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset(("GET", "POST")),
+            respect_retry_after_header=True,
+        )
+        adapter = HTTPAdapter(pool_connections=12, pool_maxsize=12, max_retries=retry)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
         HTTP_LOCAL.session = session
     return session
 
@@ -640,10 +652,14 @@ def home():
 
 @app.get("/api/health")
 def health():
+    with CACHE_LOCK:
+        cache_items = len(CACHE)
     return {"status":"ok","service":"Farm to Finance API","cache_ttl_seconds":CACHE_TTL,
+            "cache_items":cache_items,"cache_max_items":CACHE_MAX_ITEMS,
             "revision":os.getenv("RENDER_GIT_COMMIT","unknown"),
-            "agriculture_source":"CEDA Agri Market Data (AGMARKNET)",
-            "agriculture_history_from_fy":"2014-15"}
+            "agriculture_source":"CEDA historical + data.gov.in daily AGMARKNET",
+            "agriculture_history_from_fy":"2014-15",
+            "daily_mandi_api_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip())}
 
 @app.get("/api/states")
 def states():

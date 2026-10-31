@@ -5,6 +5,8 @@ services:
     plan: starter
     healthCheckPath: /api/health
     envVars:
+      - key: DATA_GOV_IN_API_KEY
+        sync: false
       - key: CACHE_TTL_SECONDS
         value: "1800"
       - key: CORS_ORIGINS

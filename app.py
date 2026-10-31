@@ -510,7 +510,7 @@ def _ogd_mandi_daily_records(state: str, district: str, commodity: str):
         params = {
             "api-key": api_key,
             "format": "json",
-            "limit": 1000,
+            "limit": 250,
             "filters[state]": state,
             "filters[district]": district,
             "filters[commodity]": term,
@@ -566,7 +566,11 @@ def agriculture_market_source(state: str, district: str, fy: str, commodity: str
     """Combine selected-FY historical mandi series with latest official daily district quotes."""
     historical = ceda_agri_market(state, district, fy, commodity)
     try:
-        daily_records = _ogd_mandi_daily_records(state, district, commodity)
+        # Daily quotes do not depend on the selected FY; reuse them across FY changes.
+        daily_records = cached(
+            f"agmarknet-daily:{state}:{district}:{commodity}",
+            lambda: _ogd_mandi_daily_records(state, district, commodity),
+        )
     except Exception:
         logging.exception("Daily AGMARKNET feed failed")
         daily_records = []

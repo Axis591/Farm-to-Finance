@@ -348,6 +348,7 @@ async function refresh(){
  currentDashboard={selection:{state,district,fy,commodity:commodityValue},generated_at:new Date().toISOString().slice(0,10),sources:{},disclaimer:"Sources may cover different reporting years and geographic levels. State-level credit and national insurance statistics are not district-level figures."};
  $("refresh").disabled=true;
  $("status").textContent="Connecting to independent data sources. Panels will update as each source responds.";
+ $("fyNotice").hidden=true;$("fyNotice").textContent="";
  $("metrics").innerHTML=[metric("Agricultural credit disbursed","Loading…","Waiting for official credit table"),metric("Loans outstanding","Loading…","Waiting for official bank-group table"),metric("Agri-household income","Loading…","Waiting for published estimate"),metric("Historical precipitation","Loading…","Waiting for climate provider")].join("");
  $("climate").innerHTML=sourceLoading(SOURCE_NAMES.climate);
  $("imd").innerHTML=sourceLoading(SOURCE_NAMES.imd_current)+'<p class="hint">Official IMD live district-warning map: <a target="_blank" rel="noopener" href="https://mausam.imd.gov.in/responsive/districtWiseWarningGIS.php">open district warning map ↗</a>.</p>';

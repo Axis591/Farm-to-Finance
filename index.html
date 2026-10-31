@@ -489,6 +489,6 @@ async function refresh(){
 $("state").addEventListener("change",async()=>{await loadDistrictSuggestions();scheduleRefresh()});
 $("district").addEventListener("change",scheduleRefresh);$("fy").addEventListener("change",scheduleRefresh);$("commodity").addEventListener("change",scheduleRefresh);$("refresh").addEventListener("click",refresh);
 function scheduleRefresh(){clearTimeout(timer);timer=setTimeout(refresh,350)}
-initDistrictMap();ensurePanelContents();loadStates().catch(e=>{$("status").textContent="Setup error: "+e.message+". Open /api/health to confirm the service is live.";ensurePanelContents();setPanelFallback("sources",{icon:"ⓘ",title:"Dashboard setup failed",body:"The state directory could not be loaded. Check <a href=\"/api/health\" target=\"_blank\" rel=\"noopener\">API health ↗</a> and refresh the page."});});
+window.addEventListener("DOMContentLoaded",()=>{initDistrictMap();ensurePanelContents();loadStates().catch(e=>{$("status").textContent="Setup error: "+e.message+". Open /api/health to confirm the service is live.";ensurePanelContents();setPanelFallback("sources",{icon:"ⓘ",title:"Dashboard setup failed",body:"The state directory could not be loaded. Check <a href=\"/api/health\" target=\"_blank\" rel=\"noopener\">API health ↗</a> and refresh the page."});});},{once:true});
 </script>
 </body></html>

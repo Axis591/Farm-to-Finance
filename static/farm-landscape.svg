@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1200" viewBox="0 0 1920 1200" fill="none">
+<defs>
+ <linearGradient id="sky" x1="160" y1="0" x2="1700" y2="1000" gradientUnits="userSpaceOnUse"><stop stop-color="#F7F4DF"/><stop offset=".5" stop-color="#EAF3E3"/><stop offset="1" stop-color="#DCEBDD"/></linearGradient>
+ <linearGradient id="hill1" x1="280" y1="400" x2="1500" y2="920" gradientUnits="userSpaceOnUse"><stop stop-color="#B7D2A7"/><stop offset="1" stop-color="#8BB894"/></linearGradient>
+ <linearGradient id="hill2" x1="500" y1="570" x2="1500" y2="1100" gradientUnits="userSpaceOnUse"><stop stop-color="#7EAD7D"/><stop offset="1" stop-color="#4F916D"/></linearGradient>
+ <linearGradient id="field" x1="900" y1="700" x2="1000" y2="1200" gradientUnits="userSpaceOnUse"><stop stop-color="#D7B76D"/><stop offset=".55" stop-color="#A9B86B"/><stop offset="1" stop-color="#5E946A"/></linearGradient>
+ <linearGradient id="river" x1="250" y1="740" x2="720" y2="1100" gradientUnits="userSpaceOnUse"><stop stop-color="#A6D1D2"/><stop offset="1" stop-color="#7CB9BE"/></linearGradient>
+ <radialGradient id="sun"><stop stop-color="#FFF7C7"/><stop offset="1" stop-color="#F2D78E" stop-opacity=".2"/></radialGradient>
+ <pattern id="grain" width="44" height="44" patternUnits="userSpaceOnUse"><circle cx="3" cy="4" r="1" fill="#4B775B" opacity=".09"/><circle cx="26" cy="25" r=".8" fill="#D3A859" opacity=".12"/></pattern>
+</defs>
+<rect width="1920" height="1200" fill="url(#sky)"/>
+<circle cx="1470" cy="205" r="190" fill="url(#sun)"/><circle cx="1470" cy="205" r="72" fill="#F2D88C" opacity=".68"/>
+<g fill="#FFFFFF" opacity=".5"><path d="M260 210c38-44 102-39 132-4 42-10 80 18 78 50H210c-6-25 15-46 50-46Z"/><path d="M1050 120c28-32 74-29 96-3 31-7 59 13 58 36H1013c-5-18 11-33 37-33Z"/></g>
+<path d="M0 585 180 430 310 510 495 335 650 470 830 360 1030 500 1180 375 1375 505 1530 390 1735 520 1920 410V1200H0Z" fill="#C5DAB7" opacity=".66"/>
+<path d="M0 690 185 565 355 630 545 485 720 615 910 505 1090 640 1265 520 1455 650 1640 535 1800 650 1920 590V1200H0Z" fill="url(#hill1)"/>
+<path d="M0 800c190-104 335-80 500-33 190 54 304-10 460-62 183-61 311-27 460 35 200 83 341 27 500-37v497H0Z" fill="url(#hill2)" opacity=".92"/>
+<path d="M0 890c172-73 340-90 500-40 146 47 260 112 410 78 172-40 253-143 434-132 213 13 337 113 576 40v364H0Z" fill="url(#field)"/>
+<path d="M0 920c180-70 333-75 515-12 155 54 268 119 419 81 170-42 274-161 435-138 216 31 354 122 551 71" stroke="#F5E3B0" stroke-width="5" opacity=".52"/>
+<g stroke="#F2E2B0" stroke-width="4" opacity=".5">
+<path d="M-40 1020c204-89 378-85 574-18s305 113 477 67 267-147 437-132 342 114 522 55"/>
+<path d="M-40 1110c225-86 390-77 585-10s315 106 482 58 259-126 434-113 338 106 510 48"/>
+<path d="M-40 1195c239-80 404-67 603-5s310 88 474 42 265-111 438-96 328 86 484 42"/>
+</g>
+<path d="M0 760c160 49 195 106 291 119 118 17 183-60 275-36 80 21 98 104 177 114 72 9 106-51 180-26" stroke="url(#river)" stroke-width="18" stroke-linecap="round" opacity=".85"/>
+<path d="M0 760c160 49 195 106 291 119 118 17 183-60 275-36 80 21 98 104 177 114 72 9 106-51 180-26" stroke="#E8F8F3" stroke-width="4" stroke-linecap="round" opacity=".8"/>
+<g fill="#427D59" opacity=".74"><path d="M150 680c-5-38 4-71 24-101 15 28 21 63 14 102 18-34 42-55 71-64-8 40-35 72-82 91Z"/><path d="M180 701c1-52 16-95 45-127 10 37 7 77-9 119 24-32 51-49 82-51-17 40-51 68-111 80Z"/><path d="M1690 775c-4-44 7-82 31-115 16 32 19 73 7 119 21-38 50-59 85-64-12 46-43 79-101 93Z"/><path d="M1734 788c3-58 21-104 55-136 9 42 3 87-17 132 29-34 61-51 96-49-22 44-62 72-134 82Z"/></g>
+<g stroke="#397451" stroke-width="8" stroke-linecap="round" opacity=".74"><path d="M340 810v-118m0 52-38-34m38 52 37-38"/><path d="M380 822V690m0 55-37-34m37 51 42-38"/><path d="M1540 850V710m0 62-39-35m39 55 40-42"/><path d="M1582 865V735m0 57-35-33m35 55 40-40"/></g>
+<g fill="#D8B95D" opacity=".95"><ellipse cx="302" cy="707" rx="18" ry="7" transform="rotate(35 302 707)"/><ellipse cx="376" cy="713" rx="18" ry="7" transform="rotate(-38 376 713)"/><ellipse cx="1502" cy="739" rx="18" ry="7" transform="rotate(35 1502 739)"/><ellipse cx="1580" cy="755" rx="18" ry="7" transform="rotate(-38 1580 755)"/></g>
+<g fill="#FFFFFF" opacity=".15"><path d="M0 0h1920v1200H0z" fill="url(#grain)"/></g>
+<g stroke="#FFFFFF" stroke-width="2" opacity=".28"><path d="M0 0h1920M0 1199h1920"/><circle cx="1730" cy="210" r="130" stroke-dasharray="5 15"/><circle cx="1730" cy="210" r="155" stroke-dasharray="3 18"/></g>
+</svg>

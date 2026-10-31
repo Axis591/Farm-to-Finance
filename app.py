@@ -698,6 +698,14 @@ def official_agriculture_credit(state: str, district: str, fy: str):
     history = [{"financial_year": y, "amount_crore": v} for y, v in zip(years, values)]
     all_states = sorted([{"state": name, "amount_crore": vals[-1]} for name, vals in AGRI_CREDIT_DISBURSEMENT.items()],
                         key=lambda x: x["amount_crore"], reverse=True)
+    all_states_by_fy = []
+    for year_index, year_name in enumerate(years):
+        for state_name, state_values in AGRI_CREDIT_DISBURSEMENT.items():
+            all_states_by_fy.append({
+                "financial_year": year_name,
+                "state": state_name,
+                "amount_crore": state_values[year_index],
+            })
     top = all_states[:10]
     outstanding = AGRI_CREDIT_OUTSTANDING.get(key, (None, None, None))
     groups = [
@@ -713,6 +721,7 @@ def official_agriculture_credit(state: str, district: str, fy: str):
         "selected_fy_data_available": any(row["financial_year"] == fy for row in history),
         "data_level": "State/UT aggregate; not district-specific",
         "disbursement_history": history, "top_states_disbursement": top, "all_states_disbursement": all_states,
+        "all_states_disbursement_history": all_states_by_fy,
         "outstanding_by_bank_group": groups,
         "outstanding_reported_sum_crore": sum(reported) if reported else None,
         "outstanding_total_is_complete": len(reported) == 3,

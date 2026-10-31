@@ -48,7 +48,7 @@ label{font-size:12px;font-weight:700;color:#43554d;display:block;margin-bottom:7
 <div><button id="refresh">Refresh data</button></div>
 </section>
 <div id="status" role="status">Connecting to agriculture data sources…</div><div class="quality-strip"><span class="quality-icon">✓</span><div><strong>Data integrity rule</strong> — Agriculture-related sources only. Every numeric panel links to its source and states its reporting date and geographic scope. Missing figures are not treated as zero, scheme rules are not presented as payments, and state or national totals are not allocated to districts. Model-based estimates are labeled as estimates.</div></div>
-<div id="fyNotice" class="fy-notice" role="alert" hidden></div>
+<div id="fyNotice" class="fy-notice" role="alert" aria-live="assertive" hidden></div>
 <section class="card map-card" id="section-map" style="margin-top:14px"><h2>Selected district on map</h2><p class="hint">The marker follows your selected state and district. It is a location marker, not an official district-boundary polygon.</p><div id="districtMap" class="district-map" role="img" aria-label="Map showing the selected district"></div><p id="mapMeta" class="map-meta">Loading district map… · © OpenStreetMap contributors</p></section><section class="grid" id="metrics"></section>
 <section class="sections">
 <div class="card" id="section-climate"><h2>Weather context for farming</h2><div id="climate"><p class="hint">Loading historical rainfall and temperature indicators…</p></div></div>
@@ -150,7 +150,7 @@ function sourceBlock(s){
    special+='<div class="fy-unavailable"><strong>Data not available for the selected FY ('+esc(d.selected_fy||"selected FY")+').</strong> Latest daily quotes, when available, are shown separately and must not be treated as historical prices for this FY.</div>';
   }
   if(!x&&!cards){
-   cards='<div class="empty-panel"><div class="empty-icon">🌾</div><div><strong>Data not available for the selected FY</strong><p>No verified mandi observations were returned for '+esc(d.commodity||"the selected crop")+' in '+esc(d.district||"the selected district")+'. No state-level price has been substituted.</p></div></div>';
+   cards='<div class="empty-panel"><div class="empty-icon">🌾</div><div><strong>data not available for the selected FY</strong><p>No verified mandi observations were returned for '+esc(d.commodity||"the selected crop")+' in '+esc(d.district||"the selected district")+'. No state-level price has been substituted.</p></div></div>';
   }
  } else if(src.includes("weather")&&Object.keys(d).length){
   const wx=[["🌧️","Total precipitation",d.precipitation_total_mm==null?"Unavailable":fmt(d.precipitation_total_mm," mm")],["🌡️","Mean maximum temperature",d.max_temperature_mean_c==null?"Unavailable":fmt(d.max_temperature_mean_c," °C")],["🌡️","Mean minimum temperature",d.min_temperature_mean_c==null?"Unavailable":fmt(d.min_temperature_mean_c," °C")],["📅","Reference period",d.period_start&&d.period_end?d.period_start+" to "+d.period_end:"Not available"]];
@@ -221,7 +221,7 @@ function updateFYNotice(j){
  if(s.pmfby_national)missing.push("PMFBY national dashboard: this is a Kharif-season series, not a state/district financial-year split.");
  if(!missing.length){box.hidden=true;box.textContent="";return;}
  box.hidden=false;
- box.innerHTML='<strong>Data not available for the selected FY — FY '+esc(fy)+'</strong><div>Some connected agriculture sources do not publish a year-specific value for this selection:</div><ul>'+missing.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>';
+ box.innerHTML='<strong>data not available for the selected FY — FY '+esc(fy)+'</strong><div>Some connected agriculture sources do not publish a year-specific value for this selection:</div><ul>'+missing.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>';
 }
 
 const PANEL_FALLBACKS={

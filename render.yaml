@@ -8,6 +8,8 @@ services:
     envVars:
       - key: DATA_GOV_IN_API_KEY
         sync: false
+      - key: GOOGLE_TRANSLATE_API_KEY
+        sync: false
       - key: CACHE_TTL_SECONDS
         value: "1800"
       - key: CACHE_MAX_ITEMS

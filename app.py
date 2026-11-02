@@ -3,13 +3,15 @@ from collections import OrderedDict
 from threading import RLock, local
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
+from html import unescape as html_unescape
+import hashlib
 from typing import Optional
 from io import BytesIO
 import xml.etree.ElementTree as ET
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +31,13 @@ CACHE_TTL = max(60, int(os.getenv("CACHE_TTL_SECONDS", "1800")))
 CACHE_MAX_ITEMS = max(100, int(os.getenv("CACHE_MAX_ITEMS", "1500")))
 HTTP_LOCAL = local()
 HTTP_USER_AGENT = "FarmToFinanceDashboard/1.1 (agricultural research dashboard)"
+TRANSLATION_CACHE = OrderedDict()
+TRANSLATION_CACHE_LOCK = RLock()
+TRANSLATION_CACHE_TTL = 7 * 24 * 60 * 60
+TRANSLATION_CACHE_MAX_ITEMS = 12000
+SUPPORTED_TRANSLATION_LANGUAGES = {
+    "en", "hi", "bn", "gu", "mr", "ta", "te", "kn", "ml", "pa", "or", "ur", "as"
+}
 
 
 def http_session():
@@ -663,7 +672,10 @@ def health():
             "revision":os.getenv("RENDER_GIT_COMMIT","unknown"),
             "agriculture_source":"CEDA historical + data.gov.in daily AGMARKNET",
             "agriculture_history_from_fy":"2014-15",
-            "daily_mandi_api_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip())}
+            "daily_mandi_api_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip()),
+            "page_translation_available":bool(os.getenv("GOOGLE_TRANSLATE_API_KEY","").strip()),
+            "page_translation_provider":"Google Cloud Translation",
+            "page_translation_languages":sorted(SUPPORTED_TRANSLATION_LANGUAGES)}
 
 @app.get("/api/states")
 def states():
@@ -1484,6 +1496,97 @@ def dashboard(state: str, district: str, fy: str, commodity: str = "Wheat"):
         return {"selection":{"state":state,"district":district,"fy":fy},"generated_at":date.today().isoformat(),"sources":sources,
           "disclaimer":"Credit disbursement is state/UT-level from a Ministry of Finance Lok Sabha answer dated 23 March 2026, not district-specific. Outstanding loans are provisional as of 31 December 2025. Agricultural-household income is a model-based estimate for July 2018–June 2019, not farm profit or current revenue. Loan repayments and farm-business profit are not inferred where verified data are unavailable. CEDA/AGMARKNET reports mandi prices, not crop production. Climate uses gridded weather estimates."}
     return cached(key,load)
+
+
+@app.post("/api/translate")
+def translate_page(payload: dict):
+    """Translate batches of page text with Google Cloud Translation; the key stays server-side."""
+    target = str(payload.get("target", "en")).strip().lower()
+    texts = payload.get("texts")
+    if target not in SUPPORTED_TRANSLATION_LANGUAGES:
+        raise HTTPException(status_code=400, detail="This language is not enabled in the portal.")
+    if not isinstance(texts, list) or not texts or len(texts) > 50:
+        raise HTTPException(status_code=400, detail="Send between 1 and 50 text segments per request.")
+    clean = []
+    total_chars = 0
+    for value in texts:
+        if not isinstance(value, str):
+            raise HTTPException(status_code=400, detail="Every text segment must be a string.")
+        if len(value) > 4000:
+            raise HTTPException(status_code=413, detail="A text segment exceeds the allowed length.")
+        total_chars += len(value)
+        clean.append(value)
+    if total_chars > 12000:
+        raise HTTPException(status_code=413, detail="The translation batch exceeds 12,000 characters.")
+    if target == "en":
+        return {"target": "en", "translations": clean, "cached": len(clean), "provider": "source text"}
+    api_key = os.getenv("GOOGLE_TRANSLATE_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Page translation is not configured yet. The administrator must add GOOGLE_TRANSLATE_API_KEY to the Render environment."
+        )
+
+    now = time.monotonic()
+    translated_by_text = {}
+    missing = []
+    missing_hashes = []
+    for text_value in clean:
+        cache_key = (target, hashlib.sha256(text_value.encode("utf-8")).hexdigest())
+        with TRANSLATION_CACHE_LOCK:
+            entry = TRANSLATION_CACHE.get(cache_key)
+            if entry and now - entry[0] < TRANSLATION_CACHE_TTL:
+                TRANSLATION_CACHE.move_to_end(cache_key)
+                translated_by_text[text_value] = entry[1]
+                continue
+            if entry:
+                TRANSLATION_CACHE.pop(cache_key, None)
+        if text_value not in translated_by_text and text_value not in missing:
+            missing.append(text_value)
+            missing_hashes.append(cache_key)
+
+    if missing:
+        endpoint = "https://translation.googleapis.com/language/translate/v2"
+        try:
+            response = http_session().post(
+                endpoint,
+                params={"key": api_key},
+                json={"q": missing, "source": "en", "target": target, "format": "text"},
+                timeout=35,
+            )
+            response.raise_for_status()
+            body = response.json()
+            rows = body.get("data", {}).get("translations", [])
+            if len(rows) != len(missing):
+                raise ValueError("The translation provider returned an incomplete batch.")
+            values = [html_unescape(str(row.get("translatedText", ""))) for row in rows]
+            if any(not value for value in values):
+                raise ValueError("The translation provider returned an empty translation.")
+        except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+            logging.warning("Page translation provider unavailable: %s", type(exc).__name__)
+            raise HTTPException(
+                status_code=503,
+                detail="Translation service is temporarily unavailable. The page remains usable in English; try again shortly."
+            ) from exc
+        with TRANSLATION_CACHE_LOCK:
+            for cache_key, source_text, translated_text in zip(missing_hashes, missing, values):
+                TRANSLATION_CACHE[cache_key] = (time.monotonic(), translated_text)
+                TRANSLATION_CACHE.move_to_end(cache_key)
+                translated_by_text[source_text] = translated_text
+            cutoff = time.monotonic() - TRANSLATION_CACHE_TTL
+            expired = [key for key, (created, _) in TRANSLATION_CACHE.items() if created < cutoff]
+            for key in expired:
+                TRANSLATION_CACHE.pop(key, None)
+            while len(TRANSLATION_CACHE) > TRANSLATION_CACHE_MAX_ITEMS:
+                TRANSLATION_CACHE.popitem(last=False)
+
+    return {
+        "target": target,
+        "translations": [translated_by_text.get(value, value) for value in clean],
+        "cached": len(clean) - len(missing),
+        "provider": "Google Cloud Translation",
+    }
+
 
 @app.get("/api/config")
 def config():

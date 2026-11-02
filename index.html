@@ -91,6 +91,25 @@ button:hover:not(:disabled){background:#1c7855;box-shadow:0 6px 16px rgba(20,93,
  html{scroll-behavior:auto}
  *,*::before,*::after{transition:none!important;animation:none!important}
 }
+
+.language-toolbar{position:absolute;right:28px;top:22px;z-index:2;width:min(390px,40%);padding:12px 13px;border:1px solid rgba(255,255,255,.28);border-radius:14px;background:rgba(8,42,30,.48);box-shadow:0 6px 22px rgba(0,0,0,.12);backdrop-filter:blur(12px)}
+.language-toolbar label{color:#f3f8ef;font-size:10px;letter-spacing:.1em;margin:0 0 6px}
+.language-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center}
+.language-toolbar select{padding:8px 10px;min-width:0;background:#fff;color:#183c2d;border-color:#d9e6d9;font-size:12px}
+.language-toolbar .location-language-button{width:auto;padding:8px 10px;white-space:nowrap;background:#d6e9d2;color:#194b34;border:1px solid rgba(255,255,255,.55);font-size:11px}
+.language-toolbar .location-language-button:hover{background:#f1e4b6}
+.language-hint{font-size:10px;line-height:1.45;color:#f0f6ee;margin-top:7px;min-height:14px}
+.language-privacy{font-size:9px;color:#d4e6d6;line-height:1.35;margin-top:3px}
+.language-toolbar [disabled]{opacity:.7}
+@media(max-width:900px){
+ .language-toolbar{position:relative;inset:auto;width:min(100%,480px);margin:0 0 14px;padding:10px;background:rgba(8,42,30,.55)}
+ header .eyebrow{margin-top:4px}
+}
+@media(max-width:540px){
+ .language-actions{grid-template-columns:1fr}
+ .language-toolbar .location-language-button{width:100%}
+ .language-toolbar select{width:100%}
+}
 </style>
 </head>
 <body>
@@ -111,7 +130,30 @@ button:hover:not(:disabled){background:#1c7855;box-shadow:0 6px 16px rgba(20,93,
 <div class="nav-note">Agriculture-focused indicators only. State and national figures are labeled by scope and never passed off as district figures.</div>
 </aside>
 <div id="top"></div>
-<header><div class="eyebrow">INDIA · FARMING · MANDI MARKETS · AGRICULTURAL CREDIT</div><h1>Farm to Finance</h1><p>A source-backed workspace for farm weather, mandi prices, agricultural credit, farmer support and crop insurance. Each metric shows its reporting scope and reference date.</p></header>
+<header><div class="language-toolbar" id="translateControl" aria-label="Page language settings">
+ <label for="languageSelect">PAGE LANGUAGE / भाषा</label>
+ <div class="language-actions">
+  <select id="languageSelect" aria-label="Choose page language">
+   <option value="auto">Automatic · browser language</option>
+   <option value="en">English</option>
+   <option value="hi">हिन्दी · Hindi</option>
+   <option value="bn">বাংলা · Bengali</option>
+   <option value="gu">ગુજરાતી · Gujarati</option>
+   <option value="mr">मराठी · Marathi</option>
+   <option value="ta">தமிழ் · Tamil</option>
+   <option value="te">తెలుగు · Telugu</option>
+   <option value="kn">ಕನ್ನಡ · Kannada</option>
+   <option value="ml">മലയാളം · Malayalam</option>
+   <option value="pa">ਪੰਜਾਬੀ · Punjabi</option>
+   <option value="or">ଓଡ଼ିଆ · Odia</option>
+   <option value="as">অসমীয়া · Assamese</option>
+   <option value="ur">اردو · Urdu</option>
+  </select>
+  <button type="button" id="detectLanguage" class="location-language-button">Use my location</button>
+ </div>
+ <div class="language-hint" id="languageStatus" role="status" aria-live="polite">Automatic language uses your browser preference. You can change it at any time.</div>
+ <div class="language-privacy">Location is requested only when you press “Use my location”.</div>
+</div><div class="eyebrow">INDIA · FARMING · MANDI MARKETS · AGRICULTURAL CREDIT</div><h1>Farm to Finance</h1><p>A source-backed workspace for farm weather, mandi prices, agricultural credit, farmer support and crop insurance. Each metric shows its reporting scope and reference date.</p></header>
 <main>
 <section class="controls">
 <div><label for="state">STATE / UNION TERRITORY</label><select id="state"></select></div>
@@ -489,6 +531,243 @@ async function refresh(){
 $("state").addEventListener("change",async()=>{await loadDistrictSuggestions();scheduleRefresh()});
 $("district").addEventListener("change",scheduleRefresh);$("fy").addEventListener("change",scheduleRefresh);$("commodity").addEventListener("change",scheduleRefresh);$("refresh").addEventListener("click",refresh);
 function scheduleRefresh(){clearTimeout(timer);timer=setTimeout(refresh,350)}
-window.addEventListener("DOMContentLoaded",()=>{initDistrictMap();ensurePanelContents();loadStates().catch(e=>{$("status").textContent="Setup error: "+e.message+". Open /api/health to confirm the service is live.";ensurePanelContents();setPanelFallback("sources",{icon:"ⓘ",title:"Dashboard setup failed",body:"The state directory could not be loaded. Check <a href=\"/api/health\" target=\"_blank\" rel=\"noopener\">API health ↗</a> and refresh the page."});});},{once:true});
+
+const PORTAL_LANGUAGES={
+ en:"English",hi:"Hindi",bn:"Bengali",gu:"Gujarati",mr:"Marathi",ta:"Tamil",te:"Telugu",
+ kn:"Kannada",ml:"Malayalam",pa:"Punjabi",or:"Odia",as:"Assamese",ur:"Urdu"
+};
+const REGION_LANGUAGE={
+ "andhra pradesh":"te","telangana":"te","tamil nadu":"ta","karnataka":"kn","kerala":"ml",
+ "maharashtra":"mr","goa":"mr","gujarat":"gu","west bengal":"bn","tripura":"bn",
+ "assam":"as","punjab":"pa","odisha":"or",
+ "uttar pradesh":"hi","madhya pradesh":"hi","rajasthan":"hi","bihar":"hi",
+ "jharkhand":"hi","chhattisgarh":"hi","haryana":"hi","himachal pradesh":"hi",
+ "uttarakhand":"hi","delhi":"hi","jammu and kashmir":"ur","ladakh":"ur"
+};
+const translationOriginals=new WeakMap();
+let activePageLanguage="en",translationGeneration=0,translationObserver=null,translationScanTimer=null,translationController=null,translationProviderReady=false,translationInProgress=false;
+function browserPreferredLanguage(){
+ const supported=new Set(Object.keys(PORTAL_LANGUAGES));
+ const candidates=[...(navigator.languages||[]),navigator.language||""];
+ for(const candidate of candidates){
+  const code=String(candidate).toLowerCase().split("-")[0];
+  if(supported.has(code))return code;
+ }
+ return "en";
+}
+function pageTranslationStatus(message){
+ const status=$("languageStatus");if(status)status.textContent=message;
+}
+function canTranslateTextNode(node){
+ if(!node||!node.parentElement)return false;
+ const parent=node.parentElement;
+ if(parent.closest("script,style,noscript,pre,code,textarea,#translateControl,.leaflet-control,.leaflet-popup,.skip-translate,[data-no-translate]"))return false;
+ if(parent.closest("#state,#district,#fy"))return false;
+ const value=node.nodeValue||"";
+ const trimmed=value.trim();
+ if(trimmed.length<2||trimmed.length>3800)return false;
+ if(!/[\p{L}]/u.test(trimmed))return false;
+ return true;
+}
+function collectPageTranslationNodes(target){
+ const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+ const pending=[],restore=[];
+ let node;
+ while((node=walker.nextNode())){
+  if(!canTranslateTextNode(node))continue;
+  let record=translationOriginals.get(node);
+  const current=node.nodeValue||"";
+  if(!record){
+   record={original:current,displayed:current,language:"en"};
+   translationOriginals.set(node,record);
+  }else if(current!==record.displayed&&current!==record.original){
+   // The application replaced this dynamic text node with fresh English source text.
+   record.original=current;record.displayed=current;record.language="en";
+  }
+  if(target==="en"){
+   if(current!==record.original)restore.push({node,record});
+   continue;
+  }
+  if(record.language===target&&current===record.displayed)continue;
+  const original=record.original;
+  const lead=(original.match(/^\s*/)||[""])[0];
+  const tail=(original.match(/\s*$/)||[""])[0];
+  const core=original.slice(lead.length,original.length-tail.length);
+  if(core.trim().length>=2)pending.push({node,record,lead,tail,text:core});
+ }
+ return {pending,restore};
+}
+function splitTranslationBatches(items){
+ const batches=[];let batch=[],characters=0;
+ for(const item of items){
+  const length=item.text.length;
+  if(batch.length>=40||characters+length>10000){if(batch.length)batches.push(batch);batch=[];characters=0;}
+  batch.push(item);characters+=length;
+ }
+ if(batch.length)batches.push(batch);
+ return batches;
+}
+async function translatePage(target,options={}){
+ const generation=++translationGeneration;
+ if(translationController)translationController.abort();
+ translationController=new AbortController();
+ const signal=translationController.signal;
+ activePageLanguage=target;
+ document.documentElement.lang=target;
+ if(target==="en"){
+  const {restore}=collectPageTranslationNodes("en");
+  restore.forEach(({node,record})=>{node.nodeValue=record.original;record.displayed=record.original;record.language="en";});
+  pageTranslationStatus(options.auto?"Automatic language: English.":"Page language: English.");
+  return;
+ }
+ const {pending}=collectPageTranslationNodes(target);
+ if(!pending.length){
+  pageTranslationStatus("Page language: "+PORTAL_LANGUAGES[target]+".");
+  return;
+ }
+ if(!translationProviderReady){
+  pageTranslationStatus("Translation needs administrator setup. The page remains available in English.");
+  return;
+ }
+ translationInProgress=true;
+ pageTranslationStatus("Translating page into "+PORTAL_LANGUAGES[target]+"…");
+ const batches=splitTranslationBatches(pending);
+ let nextBatch=0,translated=0,failed=0;
+ async function worker(){
+  while(nextBatch<batches.length){
+   const index=nextBatch++,batch=batches[index];
+   if(generation!==translationGeneration||signal.aborted)return;
+   try{
+    const response=await fetch("/api/translate",{
+     method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},
+     body:JSON.stringify({target,texts:batch.map(item=>item.text)}),signal
+    });
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.detail||"Translation request failed");
+    if(generation!==translationGeneration||signal.aborted)return;
+    const translatedTexts=data.translations||[];
+    if(translatedTexts.length!==batch.length)throw new Error("Translation response was incomplete");
+    batch.forEach((item,i)=>{
+     const translatedText=String(translatedTexts[i]??item.text);
+     if(item.node.isConnected){
+      item.node.nodeValue=item.lead+translatedText+item.tail;
+      item.record.displayed=item.node.nodeValue;
+      item.record.language=target;
+      translated++;
+     }
+    });
+   }catch(error){
+    if(signal.aborted)return;
+    failed++;
+    if(error.name!=="AbortError")console.warn("Page translation batch failed:",error.message);
+   }
+  }
+ }
+ try{
+  await Promise.all([worker(),worker(),worker()]);
+  if(generation!==translationGeneration)return;
+  translationInProgress=false;
+  if(failed){
+   pageTranslationStatus("Part of the page could not be translated. Check the translation service/API key, then select the language again.");
+  }else{
+   pageTranslationStatus("Page translated into "+PORTAL_LANGUAGES[target]+". "+translated+" text sections processed.");
+  }
+ }finally{
+  if(generation===translationGeneration)translationInProgress=false;
+ }
+}
+function setPageLanguage(preference,persist=true){
+ const target=preference==="auto"?browserPreferredLanguage():preference;
+ const select=$("languageSelect");
+ if(select)select.value=preference;
+ if(persist){
+  try{localStorage.setItem("farmToFinanceLanguage",preference);}catch(_){}
+ }
+ translatePage(target,{auto:preference==="auto"});
+}
+function languageForRegion(stateName){
+ const key=String(stateName||"").trim().toLowerCase();
+ return REGION_LANGUAGE[key]||null;
+}
+async function applyLocationLanguage(position){
+ const latitude=position.coords.latitude,longitude=position.coords.longitude;
+ pageTranslationStatus("Finding the regional language for your location…");
+ try{
+  const url="https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=5&lat="+encodeURIComponent(latitude)+"&lon="+encodeURIComponent(longitude)+"&accept-language=en";
+  const response=await fetch(url,{headers:{"Accept":"application/json"}});
+  if(!response.ok)throw new Error("Regional lookup unavailable");
+  const data=await response.json();
+  const stateName=data.address?.state||data.address?.state_district||"";
+  const language=languageForRegion(stateName);
+  if(!language)throw new Error("No regional language mapping is configured for "+(stateName||"this location"));
+  setPageLanguage(language,true);
+  pageTranslationStatus("Regional language selected: "+PORTAL_LANGUAGES[language]+" · "+stateName+".");
+ }catch(error){
+  pageTranslationStatus("Could not determine a regional language. Choose one from the language menu or use automatic browser language.");
+ }
+}
+function requestLocationLanguage(){
+ if(!navigator.geolocation){
+  pageTranslationStatus("Location-based language detection is not available in this browser.");
+  return;
+ }
+ pageTranslationStatus("Your browser will ask permission to detect the regional language…");
+ navigator.geolocation.getCurrentPosition(
+  applyLocationLanguage,
+  error=>{
+   const message=error.code===1?"Location permission was not granted.": "Location could not be determined.";
+   pageTranslationStatus(message+" Automatic browser-language selection is still available.");
+  },
+  {enableHighAccuracy:false,timeout:12000,maximumAge:3600000}
+ );
+}
+async function setupPageLanguage(){
+ const select=$("languageSelect"),locationButton=$("detectLanguage");
+ if(!select)return;
+ let saved="auto";
+ try{saved=localStorage.getItem("farmToFinanceLanguage")||"auto";}catch(_){}
+ if(saved!=="auto"&&!Object.prototype.hasOwnProperty.call(PORTAL_LANGUAGES,saved))saved="auto";
+ select.value=saved;
+ select.addEventListener("change",()=>setPageLanguage(select.value,true));
+ if(locationButton)locationButton.addEventListener("click",requestLocationLanguage);
+ try{
+  const response=await fetch("/api/config",{headers:{"Accept":"application/json"}});
+  const config=await response.json();
+  translationProviderReady=!!config.page_translation_available;
+ }catch(_){translationProviderReady=false;}
+ if(saved==="auto"){
+  const preferred=browserPreferredLanguage();
+  translatePage(preferred,{auto:true});
+  pageTranslationStatus(translationProviderReady
+   ?"Automatic language: "+PORTAL_LANGUAGES[preferred]+". Use “Use my location” to choose by your regional state."
+   :"Automatic language: "+PORTAL_LANGUAGES[preferred]+". Translation service setup is pending.");
+ }else{
+  if(saved==="en")translationProviderReady=true;
+  await translatePage(saved);
+ }
+ if("MutationObserver" in window){
+  translationObserver=new MutationObserver(()=>{
+   if(translationScanTimer)clearTimeout(translationScanTimer);
+   translationScanTimer=setTimeout(()=>{
+    if(activePageLanguage!=="en"&&!translationInProgress)translatePage(activePageLanguage);
+   },550);
+  });
+  translationObserver.observe(document.body,{subtree:true,childList:true,characterData:true});
+ }
+ // If the visitor previously granted location access, use the region only as an
+ // automatic fallback when the browser language is English. No permission prompt is forced.
+ try{
+  if(saved==="auto"&&browserPreferredLanguage()==="en"&&navigator.permissions&&navigator.geolocation){
+   const permission=await navigator.permissions.query({name:"geolocation"});
+   if(permission.state==="granted"){
+    navigator.geolocation.getCurrentPosition(position=>{
+     if(saved==="auto"&&activePageLanguage==="en")applyLocationLanguage(position);
+    },()=>{},{enableHighAccuracy:false,timeout:8000,maximumAge:3600000});
+   }
+  }
+ }catch(_){}
+}
+
+window.addEventListener("DOMContentLoaded",()=>{setupPageLanguage();initDistrictMap();ensurePanelContents();loadStates().catch(e=>{$("status").textContent="Setup error: "+e.message+". Open /api/health to confirm the service is live.";ensurePanelContents();setPanelFallback("sources",{icon:"ⓘ",title:"Dashboard setup failed",body:"The state directory could not be loaded. Check <a href=\"/api/health\" target=\"_blank\" rel=\"noopener\">API health ↗</a> and refresh the page."});});},{once:true});
 </script>
 </body></html>

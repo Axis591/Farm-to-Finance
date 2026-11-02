@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +35,8 @@ TRANSLATION_CACHE = OrderedDict()
 TRANSLATION_CACHE_LOCK = RLock()
 TRANSLATION_CACHE_TTL = 7 * 24 * 60 * 60
 TRANSLATION_CACHE_MAX_ITEMS = 12000
+TRANSLATION_RATE_LOCK = RLock()
+TRANSLATION_RATE_BUCKETS = {}
 SUPPORTED_TRANSLATION_LANGUAGES = {
     "en", "hi", "bn", "gu", "mr", "ta", "te", "kn", "ml", "pa", "or", "ur", "as"
 }
@@ -1499,9 +1501,22 @@ def dashboard(state: str, district: str, fy: str, commodity: str = "Wheat"):
 
 
 @app.post("/api/translate")
-def translate_page(payload: dict):
+def translate_page(payload: dict, request: Request):
     """Translate batches of page text with Google Cloud Translation; the key stays server-side."""
     target = str(payload.get("target", "en")).strip().lower()
+    # Modest per-client throttling protects the administrator's paid translation quota.
+    forwarded = request.headers.get("x-forwarded-for", "")
+    client_ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
+    now_rate = time.monotonic()
+    with TRANSLATION_RATE_LOCK:
+        recent = [stamp for stamp in TRANSLATION_RATE_BUCKETS.get(client_ip, []) if now_rate - stamp < 60]
+        if len(recent) >= 30:
+            raise HTTPException(status_code=429, detail="Translation request limit reached. Please wait one minute and try again.")
+        recent.append(now_rate)
+        TRANSLATION_RATE_BUCKETS[client_ip] = recent
+        if len(TRANSLATION_RATE_BUCKETS) > 5000:
+            oldest = next(iter(TRANSLATION_RATE_BUCKETS))
+            TRANSLATION_RATE_BUCKETS.pop(oldest, None)
     texts = payload.get("texts")
     if target not in SUPPORTED_TRANSLATION_LANGUAGES:
         raise HTTPException(status_code=400, detail="This language is not enabled in the portal.")

@@ -1,3 +1,7 @@
+## Public hosting (Google Cloud Run)
+
+For an alternative public HTTPS host with automatic GitHub deployments, follow [DEPLOY_CLOUD_RUN.md](DEPLOY_CLOUD_RUN.md). Cloud Run has a monthly free tier, but requires a linked billing account and may charge if usage exceeds the allowance.
+
 # Farm to Finance — hosted dashboard starter
 
 This is a deployable web application starter, not a deployed public website. It contains a browser dashboard and a FastAPI server that loads data in the background whenever state, district, or FY changes.

@@ -1592,6 +1592,9 @@ def translate_page(payload: dict):
 def config():
     return {"agmarknet_price_source":"AGMARKNET daily data.gov.in + CEDA historical series",
             "mandi_daily_api_key_configured":bool(os.getenv("DATA_GOV_IN_API_KEY","").strip()),
+            "page_translation_available":bool(os.getenv("GOOGLE_TRANSLATE_API_KEY","").strip()),
+            "page_translation_provider":"Google Cloud Translation",
+            "page_translation_languages":sorted(SUPPORTED_TRANSLATION_LANGUAGES),
             "official_agriculture_credit_available":True,
             "pm_kisan_scheme_reference_available":True,
             "pmfby_kharif_snapshot_available":True,
